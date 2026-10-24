@@ -55,18 +55,16 @@ col_esquerda, col_direita = st.columns([1.2, 1])
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Calendário reativo de cliques
+    # Calendário interativo reativo
     data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Limpeza de cache de sessão se houver troca de dia no ecrã
     if "data_historica" not in st.session_state:
         st.session_state["data_historica"] = data_str
     elif st.session_state["data_historica"] != data_str:
         st.session_state["data_historica"] = data_str
         st.rerun()
 
-    # Cabeçalhos limpos com isolamento do Host
     headers = {
         'x-apisports-key': API_KEY,
         'x-rapidapi-host': 'v2.nba.api-sports.io'
@@ -74,31 +72,39 @@ with col_esquerda:
     
     jogos_com_hora = []
     
-    # URL 100% CORRIGIDO E ISOLADO DO PARÂMETRO DA DATA
+    # Rota oficial limpa
     url_base_oficial = "https://api-sports.io"
-    parametros_busca = {'date': data_str}
+    
+    # PARAMETRIZAÇÃO ADAPTADA: Injetada a season exigida obrigatoriamente pela API-Basketball
+    parametros_busca = {
+        'date': data_str,
+        'season': '2026'
+    }
     
     try:
-        # Passar os parâmetros de forma nativa e isolada para evitar erros NameResolution
-        res = requests.get(url_base_oficial, headers=headers, params=parametros_busca, timeout=12).json()
-        records = res.get('response', [])
+        response = requests.get(url_base_oficial, headers=headers, params=parametros_busca, timeout=12)
         
-        # Extrair jogos do campeonato oficial (league: standard)
-        jogos_oficiais = [g for g in records if str(g.get('league')).lower() == 'standard']
-        
-        for g in jogos_oficiais:
-            try:
-                dt_utc = pd.to_datetime(g['date']['start'])
-                dt_pt = dt_utc.tz_convert('Europe/Lisbon') if dt_utc.tz else dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
-                
-                jogos_com_hora.append({
-                    'casa': g['teams']['home']['name'],
-                    'fora': g['teams']['away']['name'],
-                    'hora_pt': dt_pt.strftime('%H:%M'),
-                    'timestamp': dt_pt.timestamp()
-                })
-            except Exception:
-                pass
+        # Proteção robusta contra retornos de erro do servidor
+        if response.status_code == 200:
+            res_json = response.json()
+            records = res_json.get('response', [])
+            
+            # Filtrar apenas confrontos da liga principal da NBA
+            jogos_oficiais = [g for g in records if str(g.get('league')).lower() == 'standard']
+            
+            for g in jogos_oficiais:
+                try:
+                    dt_utc = pd.to_datetime(g['date']['start'])
+                    dt_pt = dt_utc.tz_convert('Europe/Lisbon') if dt_utc.tz else dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
+                    
+                    jogos_com_hora.append({
+                        'casa': g['teams']['home']['name'],
+                        'fora': g['teams']['away']['name'],
+                        'hora_pt': dt_pt.strftime('%H:%M'),
+                        'timestamp': dt_pt.timestamp()
+                    })
+                except Exception:
+                    pass
     except Exception as e:
         st.error(f"Erro de comunicação com a API: {e}")
         
@@ -117,7 +123,7 @@ with col_esquerda:
     equipa_fora = ""
     if equipa_casa and jogos_com_hora:
         jogo_encontrado = next((j for j in jogos_com_hora if j['casa'] == equipa_casa), None)
-        if jogo_encontrado:
+        if juego_encontrado:
             equipa_fora = jogo_encontrado['fora']
             st.text_input("🚀 Equipa de Fora (Preenchimento Automático):", value=equipa_fora, disabled=True, key=f"fora_input_{data_str}")
             
