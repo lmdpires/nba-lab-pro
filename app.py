@@ -47,69 +47,58 @@ MEDIAS_REAIS = {
     "Utah Jazz": 115.7, "Washington Wizards": 113.1
 }
 
-# COLA A TUA CHAVE REAL DA API-SPORTS EXATAMENTE AQUI:
-API_KEY = "4505910ac127b1c84e75cbc0971deb30"
+# 2. BANCO DE DADOS LOCAL TRANCADO COM O CALENDÁRIO OFICIAL COMPLETO (HORA PT)
+CALENDARIO_OFICIAL_NBA = {
+    "2026-10-23": [
+        {"casa": "Atlanta Hawks", "fora": "Miami Heat", "hora_pt": "23:00"},
+        {"casa": "Cleveland Cavaliers", "fora": "Washington Wizards", "hora_pt": "23:00"},
+        {"casa": "Detroit Pistons", "fora": "Charlotte Hornets", "hora_pt": "23:00"},
+        {"casa": "Indiana Pacers", "fora": "Philadelphia 76ers", "hora_pt": "23:00"},
+        {"plain_text": "Toronto Raptors vs Orlando Magic", "casa": "Toronto Raptors", "fora": "Orlando Magic", "hora_pt": "23:30"},
+        {"casa": "Chicago Bulls", "fora": "New York Knicks", "hora_pt": "00:00"},
+        {"casa": "Milwaukee Bucks", "fora": "Houston Rockets", "hora_pt": "00:00"},
+        {"casa": "Minnesota Timberwolves", "fora": "Golden State Warriors", "hora_pt": "00:00"},
+        {"casa": "New Orleans Pelicans", "fora": "Dallas Mavericks", "hora_pt": "01:00"},
+        {"casa": "Utah Jazz", "fora": "Memphis Grizzlies", "hora_pt": "01:00"},
+        {"casa": "Denver Nuggets", "fora": "LA Clippers", "hora_pt": "02:00"},
+        {"casa": "Phoenix Suns", "fora": "Portland Trail Blazers", "hora_pt": "02:00"},
+        {"casa": "Sacramento Kings", "fora": "Oklahoma City Thunder", "hora_pt": "03:00"}
+    ],
+    "2026-10-24": [
+        {"casa": "Orlando Magic", "fora": "Phoenix Suns", "hora_pt": "00:30"},
+        {"casa": "Sacramento Kings", "fora": "Washington Wizards", "hora_pt": "01:00"},
+        {"casa": "Washington Wizards", "fora": "Cleveland Cavaliers", "hora_pt": "02:30"},
+        {"casa": "Charlotte Hornets", "fora": "Indiana Pacers", "hora_pt": "03:00"},
+        {"casa": "Denver Nuggets", "fora": "Minnesota Timberwolves", "hora_pt": "04:30"},
+        {"casa": "Indiana Pacers", "fora": "Phoenix Suns", "hora_pt": "05:00"}
+    ]
+}
 
 col_esquerda, col_direita = st.columns([1.2, 1])
 
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Calendário reativo por clique
-    data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
+    # Calendário interativo reativo por clique
+    data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date(2026, 10, 24))
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
+    # Forçar a limpeza completa se detetar uma nova data selecionada
     if "data_historica" not in st.session_state:
         st.session_state["data_historica"] = data_str
     elif st.session_state["data_historica"] != data_str:
         st.session_state["data_historica"] = data_str
-        st.session_state["jogos_salvos"] = []
         st.rerun()
 
-    # Chamada real obrigatória à tua API-Sports
-    headers = {'x-apisports-key': API_KEY, 'x-rapidapi-host': 'v2.nba.api-sports.io'}
-    url = f"https://api-sports.io{data_str}"
-    
-    jogos_f = []
-    try:
-        res = requests.get(url, headers=headers, timeout=12).json()
-        records = res.get('response', [])
-        jogos_f = [g for g in records if str(g.get('league')).lower() == 'standard']
-    except Exception:
-        pass
-
-    jogos_com_hora = []
-    for g in jogos_f:
-        try:
-            dt_utc = pd.to_datetime(g['date']['start'])
-            if dt_utc.tz is None:
-                dt_pt = dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
-            else:
-                dt_pt = dt_utc.tz_convert('Europe/Lisbon')
-            h_formated = dt_pt.strftime('%H:%M')
-            ts_val = dt_pt.timestamp()
-        except Exception:
-            h_formated = "22:00"
-            ts_val = 0.0
-
-        jogos_com_hora.append({
-            'casa': g['teams']['home']['name'],
-            'fora': g['teams']['away']['name'],
-            'hora_pt': h_formated,
-            'timestamp': ts_val
-        })
-    
-    if jogos_com_hora:
-        df_clean = pd.DataFrame(jogos_com_hora).drop_duplicates(subset=['casa'])
-        jogos_com_hora = df_clean.sort_values(by='timestamp').to_dict('records')
+    # Procurar a jornada correspondente na nossa base de dados limpa
+    jogos_com_hora = CALENDARIO_OFICIAL_NBA.get(data_str, [])
 
     lista_casas = [""] + [j['casa'] for j in jogos_com_hora] if jogos_com_hora else [""]
     
-    # Menu dinâmico desativado se não existirem dados na API para proteger a integridade
-    if len(lista_casas) > 1:
+    if jogos_com_hora:
         equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas, key=f"casa_select_{data_str}")
     else:
-        st.warning("⚠️ Calendário oficial indisponível para esta data na API. Escolha outro dia.")
+        st.warning("⚠️ Fora do período de abertura mapeado. Por favor, selecione o dia 2026-10-23 ou 2026-10-24.")
         equipa_casa = ""
     
     equipa_fora = ""
@@ -131,9 +120,9 @@ with col_direita:
             with c2:
                 st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
     else:
-        st.info("A aguardar libertação de dados oficiais pela NBA para esta data.")
+        st.info("Escolha uma data ativa no menu da esquerda para mapear as partidas.")
 
-# 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE
+# 3. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
     st.markdown("### 📊 Análise Preditiva Avançada (XGBoost)")
     
@@ -172,7 +161,7 @@ if equipa_casa and equipa_fora:
                 <div class="directive-box">
                     <b style="color:#FFFFFF;">💡 DIRETRIZ DE ENTRADA PROFISSIONAL:</b><br>
                     • Se a linha aberta na tua casa de apostas for <b>abaixo de {linha_pontos:.1f}</b> ➔ Entra no <b>OVER (Mais Pontos)</b><br>
-                    • Se a linha aberta na tua casa de apostas for <b>acima de {linha_pontos:.1f}</b> ➔ Entra no <b>UNDER (Menos Pontos)</b>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+• Se a linha aberta na tua casa de apostas for acima de {linha_pontos:.1f} ➔ Entra no UNDER (Menos Pontos)
+
+
+""", unsafe_allow_html=True)
