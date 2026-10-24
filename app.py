@@ -10,42 +10,45 @@ st.markdown("""
 <style>
 :root { --bg:#0a1018; --panel:#111b27; --line:#26384b; --muted:#8fa4ba; --white:#f2f6fb; --blue:#68c4ff; --green:#35d49a; }
 .stApp {background:radial-gradient(ellipse at 10% 0%,rgba(27,91,133,.13),transparent 32%),var(--bg);color:var(--white)}
-.block-container {max-width:1600px;padding:1rem 1.25rem 1.5rem}
+.block-container {max-width:1720px;padding:.8rem 1.1rem 1rem}
 h1,h2,h3,p,label {margin-top:0}
-h1 {font-size:1.55rem!important;letter-spacing:-.03em;font-weight:850!important;margin-bottom:.1rem}
+h1 {font-size:1.4rem!important;letter-spacing:-.03em;font-weight:850!important;margin-bottom:0}
 h2 {font-size:1.05rem!important;font-weight:800!important}
 h3 {font-size:.95rem!important;font-weight:800!important}
 p,label,[data-testid="stCaptionContainer"] p {color:var(--muted)}
 hr {margin:.6rem 0!important;border-color:var(--line)!important}
-.topbar {display:flex;align-items:center;gap:10px;padding:10px 14px;margin-bottom:12px;border:1px solid #263d51;border-radius:12px;background:linear-gradient(100deg,#132638,#111b27 70%,#12251f)}
+.topbar {display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:9px;border:1px solid #263d51;border-radius:12px;background:linear-gradient(100deg,#132638,#111b27 70%,#12251f)}
 .ball {font-size:1.8rem}
 .brand-sub {font-size:.76rem;color:#9eb2c7;margin-top:2px}
 .status {margin-left:auto;font-size:.68rem;color:#53dca9;font-weight:800;letter-spacing:.08em}
 .section-label {font-size:.67rem;text-transform:uppercase;letter-spacing:.12em;font-weight:850;color:#83a1bc;margin:0 0 5px}
 .left-panel,.right-panel {background:rgba(14,22,32,.7);border:1px solid #243447;border-radius:12px;padding:12px}
 .fixture-help {font-size:.72rem;color:#8fa4ba;margin-bottom:8px}
-.game-button div[data-testid="stButton"] > button {text-align:left!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:9px 10px!important;line-height:1.25!important;border-radius:8px!important;margin-bottom:4px!important;font-size:.79rem!important}
+.game-button div[data-testid="stButton"] > button {text-align:left!important;justify-content:flex-start!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:7px 9px!important;line-height:1.2!important;border-radius:7px!important;margin-bottom:3px!important;font-size:.76rem!important}
+.game-button div[data-testid="stButton"] > button > div {width:100%;text-align:left!important;justify-content:flex-start!important}
+.game-button div[data-testid="stButton"] > button p {width:100%;text-align:left!important;margin:0!important}
 div[data-testid="stButton"] > button {border:1px solid #2a3d51;background:#121e2b;color:#eaf2fb;font-weight:700}
 div[data-testid="stButton"] > button:hover {border-color:#68c4ff;background:#182a3c;color:#fff}
 div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff}
 div[data-testid="stDateInput"] input {background:#eaf1f8!important;color:#182331!important;border-radius:7px!important;min-height:36px}
 div[data-testid="stDateInput"] label {font-size:.75rem!important;font-weight:700!important}
-div[data-testid="stMetric"] {background:#0c1520;border:1px solid #26384b;border-radius:9px;padding:9px 11px}
+div[data-testid="stMetric"] {background:#0c1520;border:1px solid #26384b;border-radius:8px;padding:7px 9px}
 div[data-testid="stMetricLabel"] {font-size:.72rem!important;color:#9db0c4!important}
-div[data-testid="stMetricValue"] {font-size:1.35rem!important;color:#f5f9ff!important;font-weight:850}
-.market-card {border:1px solid #285743;border-radius:10px;padding:11px 12px;background:linear-gradient(140deg,#14251f,#101923);margin-bottom:8px}
+div[data-testid="stMetricValue"] {font-size:1.2rem!important;color:#f5f9ff!important;font-weight:850}
+.market-card {border:1px solid #285743;border-radius:8px;padding:9px 10px;background:linear-gradient(140deg,#14251f,#101923);margin-bottom:6px}
 .market-card.total {border-color:#2a5277;background:linear-gradient(140deg,#142337,#101923)}
 .market-kicker {font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;font-weight:850;color:#73dcb5}
 .market-card.total .market-kicker {color:#79caff}
 .market-title {font-size:1rem;font-weight:850;color:#fff;margin-top:3px}
 .market-desc {font-size:.72rem;color:#91a5ba;margin-top:2px}
-.match-header {border:1px solid #2a465a;border-radius:9px;padding:10px 12px;background:#122131;margin:8px 0 10px}
-.match-title {font-size:1rem;font-weight:850;color:#fff}
+.match-header {border:1px solid #2a465a;border-radius:8px;padding:8px 10px;background:#122131;margin:6px 0 8px}
+.match-title {font-size:.96rem;font-weight:850;color:#fff}
 .match-meta {font-size:.72rem;color:#9eb2c7;margin-top:3px}
 .small-note {font-size:.69rem;color:#8195a9}
-.empty-state {padding:24px 14px;text-align:center;border:1px dashed #33485c;border-radius:10px;color:#9aafc4;background:#101923}
+.empty-state {padding:20px 12px;text-align:center;border:1px dashed #33485c;border-radius:10px;color:#9aafc4;background:#101923}
 div[data-testid="stNumberInput"] input {font-size:.85rem}
-[data-testid="stVerticalBlock"] {gap:.45rem}
+[data-testid="stVerticalBlock"] {gap:.35rem}
+[data-testid="stHorizontalBlock"] {gap:.65rem}
 @media(max-width:900px){.block-container{padding:.65rem}.status{display:none}}
 </style>
 """, unsafe_allow_html=True)
@@ -149,7 +152,7 @@ with left:
             for game in games:
                 is_selected = st.session_state.get("nba_selected_game") == game["id"]
                 st.markdown('<div class="game-button">', unsafe_allow_html=True)
-                label = f"{'●' if is_selected else '○'}  {game['time']}  ·  {game['away']} @ {game['home']}"
+                label = f"{'▸' if is_selected else '·'}  {game['time']}   {game['away']} @ {game['home']}"
                 if st.button(label, key=f"choose_{date_str}_{game['id']}",
                              type="primary" if is_selected else "secondary", use_container_width=True):
                     st.session_state["nba_selected_game"] = game["id"]
@@ -225,4 +228,4 @@ with right:
                     st.caption("Linha abaixo da referência.")
             st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
 
-st.markdown('<hr><div class="small-note">NBA LAB PRO · Interface compacta de análise. As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
+st.markdown('<hr><div class="small-note">NBA LAB PRO · Compact UI v2. As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
