@@ -48,7 +48,7 @@ MEDIAS_REAIS = {
 }
 
 # Configure a chave em .streamlit/secrets.toml:
-# API_SPORTS_NBA_KEY = "a_tua_chave"
+# API_SPORTS_NBA_KEY = "4505910ac127b1c84e75cbc0971deb30"
 try:
     API_KEY = st.secrets["API_SPORTS_NBA_KEY"]
 except Exception:
