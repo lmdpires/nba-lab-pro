@@ -82,7 +82,7 @@ with col_esquerda:
                     {'date': {'start': f'{data_str}T03:00:00+00:00'}, 'teams': {'home': {'name': 'Los Angeles Lakers'}, 'away': {'name': 'Phoenix Suns'}}},
                     {'date': {'start': f'{data_str}T03:30:00+00:00'}, 'teams': {'home': {'name': 'Golden State Warriors'}, 'away': {'name': 'Sacramento Kings'}}}
                 ]
-            else: # Gerador automático sem erros de sintaxe para datas futuras
+            else: # Gerador automático para datas futuras
                 hash_dia = sum(int(c) for c in data_str.replace("-","") if c.isdigit())
                 equipas_lista = list(MEDIAS_REAIS.keys())
                 jogos_f = []
@@ -125,7 +125,8 @@ with col_direita:
     st.subheader("📋 Lista de Jogos (Hora PT)")
     if jogos_ativos_painel:
         for j in jogos_ativos_painel:
-            c1, c2 = st.columns()
+            # CORREÇÃO CRUCIAL AQUI: Adicionado o número 2 obrigatoriamente
+            c1, c2 = st.columns(2)
             with c1:
                 st.write(f"🏟️ **{j['casa']}** vs **{j['fora']}**")
             with c2:
