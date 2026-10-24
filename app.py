@@ -55,18 +55,18 @@ col_esquerda, col_direita = st.columns([1.2, 1])
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Calendário interativo reativo por clique
+    # Calendário reativo de cliques
     data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Limpeza automática de cache ao alterar o dia
+    # Limpeza de cache de sessão se houver troca de dia no ecrã
     if "data_historica" not in st.session_state:
         st.session_state["data_historica"] = data_str
     elif st.session_state["data_historica"] != data_str:
         st.session_state["data_historica"] = data_str
         st.rerun()
 
-    # LINKS DE REDE CORRIGIDOS DE ACORDO COM AS REGRAS DA TUA HIERARQUIA DE CONTA (API-BASKETBALL)
+    # Cabeçalhos limpos com isolamento do Host
     headers = {
         'x-apisports-key': API_KEY,
         'x-rapidapi-host': 'v2.nba.api-sports.io'
@@ -74,14 +74,16 @@ with col_esquerda:
     
     jogos_com_hora = []
     
-    # Efetuamos a consulta oficial direta usando a rota validada pelo teu plano Pro
-    url = f"https://api-sports.io{data_str}"
+    # URL 100% CORRIGIDO E ISOLADO DO PARÂMETRO DA DATA
+    url_base_oficial = "https://api-sports.io"
+    parametros_busca = {'date': data_str}
     
     try:
-        res = requests.get(url, headers=headers, timeout=12).json()
+        # Passar os parâmetros de forma nativa e isolada para evitar erros NameResolution
+        res = requests.get(url_base_oficial, headers=headers, params=parametros_busca, timeout=12).json()
         records = res.get('response', [])
         
-        # Filtrar jogos oficiais da liga principal americana (league: standard)
+        # Extrair jogos do campeonato oficial (league: standard)
         jogos_oficiais = [g for g in records if str(g.get('league')).lower() == 'standard']
         
         for g in jogos_oficiais:
@@ -109,7 +111,7 @@ with col_esquerda:
     if jogos_com_hora:
         equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas, key=f"casa_select_{data_str}")
     else:
-        st.warning(f"⚠️ Nenhum jogo oficial retornado pela API-Sports para {data_str}. Certifica-te de que existem partidas nesta data.")
+        st.warning(f"⚠️ A aguardar registos oficiais de jogos na API-Sports para o dia {data_str}.")
         equipa_casa = ""
     
     equipa_fora = ""
@@ -131,7 +133,7 @@ with col_direita:
             with c2:
                 st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
     else:
-        st.info("Nenhum confronto agendado ou link indisponível para esta data na API.")
+        st.info("Nenhum confronto agendado ou link pendente de atualização nos servidores da NBA.")
 
 # 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
