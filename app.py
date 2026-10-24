@@ -102,7 +102,7 @@ with col_esquerda:
 
     lista_casas = [""] + [j['casa'] for j in jogos_com_hora] if jogos_com_hora else [""]
     
-    if juegos_com_hora:
+    if jogos_com_hora:
         equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas, key=f"casa_select_{data_str}")
     else:
         st.warning(f"⚠️ Sem jogos registados na API para o dia {data_str}. Tenta escolher outro dia (ex: 2026-10-23 ou 2026-10-24).")
