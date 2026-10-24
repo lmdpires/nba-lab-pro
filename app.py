@@ -80,7 +80,7 @@ with col_esquerda:
         "league": "standard"
     }
     
- try:
+try:
         response = requests.get(
             url,
             headers=headers,
