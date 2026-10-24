@@ -1,4 +1,5 @@
 import streamlit as st
+import requests
 import datetime
 import pandas as pd
 
@@ -46,54 +47,66 @@ MEDIAS_REAIS = {
     "Utah Jazz": 115.7, "Washington Wizards": 113.1
 }
 
-# CALENDÁRIO OFICIAL NBA REAL CORRIGIDO (HORÁRIO DE PORTUGAL - ESTREITAMENTE ÚNICO)
-CALENDARIO_REAL_NBA = {
-    "2026-10-23": [
-        {"casa": "Orlando Magic", "fora": "Miami Heat", "hora_pt": "23:00"},
-        {"casa": "Atlanta Hawks", "fora": "Brooklyn Nets", "hora_pt": "23:00"},
-        {"casa": "Philadelphia 76ers", "fora": "Milwaukee Bucks", "hora_pt": "23:30"},
-        {"casa": "Toronto Raptors", "fora": "Cleveland Cavaliers", "hora_pt": "23:30"},
-        {"casa": "Houston Rockets", "fora": "Charlotte Hornets", "hora_pt": "00:00"},
-        {"casa": "New Orleans Pelicans", "fora": "Chicago Bulls", "hora_pt": "00:00"},
-        {"casa": "Utah Jazz", "fora": "Memphis Grizzlies", "hora_pt": "01:00"}
-    ],
-    "2026-10-24": [
-        {"casa": "Cleveland Cavaliers", "fora": "Detroit Pistons", "hora_pt": "00:30"},
-        {"casa": "New York Knicks", "fora": "Indiana Pacers", "hora_pt": "00:30"},
-        {"casa": "Atlanta Hawks", "fora": "Charlotte Hornets", "hora_pt": "01:30"},
-        {"casa": "Houston Rockets", "fora": "Memphis Grizzlies", "hora_pt": "02:00"},
-        {"casa": "Utah Jazz", "fora": "Golden State Warriors", "hora_pt": "02:30"},
-        {"casa": "Los Angeles Lakers", "fora": "Phoenix Suns", "hora_pt": "03:00"},
-        {"casa": "Portland Trail Blazers", "fora": "New Orleans Pelicans", "hora_pt": "03:00"},
-        {"casa": "Sacramento Kings", "fora": "Minnesota Timberwolves", "hora_pt": "03:00"}
-    ]
-}
+# COLA A TUA CHAVE REAL DA API-SPORTS EXATAMENTE AQUI:
+API_KEY = "4505910ac127b1c84e75cbc0971deb30"
 
 col_esquerda, col_direita = st.columns([1.2, 1])
 
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Calendário interativo reativo por clique
-    data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date(2026, 10, 24))
+    # O calendário agora abre por padrão no dia de hoje (Ano Corrente)
+    data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Forçar a atualização imediata quando a data muda
+    # Limpeza reativa automática de memória se detetar mudança de dia
     if "data_historica" not in st.session_state:
         st.session_state["data_historica"] = data_str
     elif st.session_state["data_historica"] != data_str:
         st.session_state["data_historica"] = data_str
         st.rerun()
 
-    # Puxar a lista de jogos oficiais reais da nossa base de dados limpa
-    jogos_com_hora = CALENDARIO_REAL_NBA.get(data_str, [])
+    # Chamada Real Direta e Obrigatória à tua API-Sports
+    headers = {'x-apisports-key': API_KEY, 'x-rapidapi-host': 'v2.nba.api-sports.io'}
+    url = f"https://api-sports.io{data_str}"
+    
+    jogos_com_hora = []
+    try:
+        res = requests.get(url, headers=headers, timeout=12).json()
+        records = res.get('response', [])
+        
+        # Filtrar sem limites todos os confrontos oficiais da liga principal (Standard)
+        jogos_oficiais = [g for g in records if str(g.get('league')).lower() == 'standard']
+        
+        for g in jogos_oficiais:
+            try:
+                dt_utc = pd.to_datetime(g['date']['start'])
+                dt_pt = dt_utc.tz_convert('Europe/Lisbon') if dt_utc.tz else dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
+                h_formated = dt_pt.strftime('%H:%M')
+                ts_val = dt_pt.timestamp()
+            except Exception:
+                h_formated = "00:00"
+                ts_val = 0.0
+
+            jogos_com_hora.append({
+                'casa': g['teams']['home']['name'],
+                'fora': g['teams']['away']['name'],
+                'hora_pt': h_formated,
+                'timestamp': ts_val
+            })
+    except Exception:
+        pass
+    
+    if jogos_com_hora:
+        df_clean = pd.DataFrame(jogos_com_hora).drop_duplicates(subset=['casa'])
+        jogos_com_hora = df_clean.sort_values(by='timestamp').to_dict('records')
 
     lista_casas = [""] + [j['casa'] for j in jogos_com_hora] if jogos_com_hora else [""]
     
     if jogos_com_hora:
         equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas, key=f"casa_select_{data_str}")
     else:
-        st.warning("⚠️ Calendário oficial indisponível para esta data específica. Por favor, selecione o dia 2026-10-23 ou 2026-10-24.")
+        st.warning(f"⚠️ Sem dados oficiais registados na API para a data {data_str}. Verifique se escolheu o ano e dia corretos.")
         equipa_casa = ""
     
     equipa_fora = ""
@@ -115,9 +128,9 @@ with col_direita:
             with c2:
                 st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
     else:
-        st.info("Por favor, selecione o dia 23 ou 24 no calendário da esquerda para mapear as partidas.")
+        st.info("Selecione uma data ativa no calendário para descarregar a jornada real.")
 
-# 3. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
+# 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
     st.markdown("### 📊 Análise Preditiva Avançada (XGBoost)")
     
