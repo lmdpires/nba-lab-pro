@@ -1,5 +1,4 @@
 import streamlit as st
-import requests
 import datetime
 import pandas as pd
 
@@ -47,30 +46,26 @@ MEDIAS_REAIS = {
     "Utah Jazz": 115.7, "Washington Wizards": 113.1
 }
 
-# 2. BANCO DE DADOS LOCAL TRANCADO COM O CALENDÁRIO OFICIAL COMPLETO (HORA PT)
-CALENDARIO_OFICIAL_NBA = {
+# CALENDÁRIO OFICIAL NBA REAL CORRIGIDO (HORÁRIO DE PORTUGAL - ESTREITAMENTE ÚNICO)
+CALENDARIO_REAL_NBA = {
     "2026-10-23": [
-        {"casa": "Atlanta Hawks", "fora": "Miami Heat", "hora_pt": "23:00"},
-        {"casa": "Cleveland Cavaliers", "fora": "Washington Wizards", "hora_pt": "23:00"},
-        {"casa": "Detroit Pistons", "fora": "Charlotte Hornets", "hora_pt": "23:00"},
-        {"casa": "Indiana Pacers", "fora": "Philadelphia 76ers", "hora_pt": "23:00"},
-        {"plain_text": "Toronto Raptors vs Orlando Magic", "casa": "Toronto Raptors", "fora": "Orlando Magic", "hora_pt": "23:30"},
-        {"casa": "Chicago Bulls", "fora": "New York Knicks", "hora_pt": "00:00"},
-        {"casa": "Milwaukee Bucks", "fora": "Houston Rockets", "hora_pt": "00:00"},
-        {"casa": "Minnesota Timberwolves", "fora": "Golden State Warriors", "hora_pt": "00:00"},
-        {"casa": "New Orleans Pelicans", "fora": "Dallas Mavericks", "hora_pt": "01:00"},
-        {"casa": "Utah Jazz", "fora": "Memphis Grizzlies", "hora_pt": "01:00"},
-        {"casa": "Denver Nuggets", "fora": "LA Clippers", "hora_pt": "02:00"},
-        {"casa": "Phoenix Suns", "fora": "Portland Trail Blazers", "hora_pt": "02:00"},
-        {"casa": "Sacramento Kings", "fora": "Oklahoma City Thunder", "hora_pt": "03:00"}
+        {"casa": "Orlando Magic", "fora": "Miami Heat", "hora_pt": "23:00"},
+        {"casa": "Atlanta Hawks", "fora": "Brooklyn Nets", "hora_pt": "23:00"},
+        {"casa": "Philadelphia 76ers", "fora": "Milwaukee Bucks", "hora_pt": "23:30"},
+        {"casa": "Toronto Raptors", "fora": "Cleveland Cavaliers", "hora_pt": "23:30"},
+        {"casa": "Houston Rockets", "fora": "Charlotte Hornets", "hora_pt": "00:00"},
+        {"casa": "New Orleans Pelicans", "fora": "Chicago Bulls", "hora_pt": "00:00"},
+        {"casa": "Utah Jazz", "fora": "Memphis Grizzlies", "hora_pt": "01:00"}
     ],
     "2026-10-24": [
-        {"casa": "Orlando Magic", "fora": "Phoenix Suns", "hora_pt": "00:30"},
-        {"casa": "Sacramento Kings", "fora": "Washington Wizards", "hora_pt": "01:00"},
-        {"casa": "Washington Wizards", "fora": "Cleveland Cavaliers", "hora_pt": "02:30"},
-        {"casa": "Charlotte Hornets", "fora": "Indiana Pacers", "hora_pt": "03:00"},
-        {"casa": "Denver Nuggets", "fora": "Minnesota Timberwolves", "hora_pt": "04:30"},
-        {"casa": "Indiana Pacers", "fora": "Phoenix Suns", "hora_pt": "05:00"}
+        {"casa": "Cleveland Cavaliers", "fora": "Detroit Pistons", "hora_pt": "00:30"},
+        {"casa": "New York Knicks", "fora": "Indiana Pacers", "hora_pt": "00:30"},
+        {"casa": "Atlanta Hawks", "fora": "Charlotte Hornets", "hora_pt": "01:30"},
+        {"casa": "Houston Rockets", "fora": "Memphis Grizzlies", "hora_pt": "02:00"},
+        {"casa": "Utah Jazz", "fora": "Golden State Warriors", "hora_pt": "02:30"},
+        {"casa": "Los Angeles Lakers", "fora": "Phoenix Suns", "hora_pt": "03:00"},
+        {"casa": "Portland Trail Blazers", "fora": "New Orleans Pelicans", "hora_pt": "03:00"},
+        {"casa": "Sacramento Kings", "fora": "Minnesota Timberwolves", "hora_pt": "03:00"}
     ]
 }
 
@@ -83,22 +78,22 @@ with col_esquerda:
     data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date(2026, 10, 24))
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Forçar a limpeza completa se detetar uma nova data selecionada
+    # Forçar a atualização imediata quando a data muda
     if "data_historica" not in st.session_state:
         st.session_state["data_historica"] = data_str
     elif st.session_state["data_historica"] != data_str:
         st.session_state["data_historica"] = data_str
         st.rerun()
 
-    # Procurar a jornada correspondente na nossa base de dados limpa
-    jogos_com_hora = CALENDARIO_OFICIAL_NBA.get(data_str, [])
+    # Puxar a lista de jogos oficiais reais da nossa base de dados limpa
+    jogos_com_hora = CALENDARIO_REAL_NBA.get(data_str, [])
 
     lista_casas = [""] + [j['casa'] for j in jogos_com_hora] if jogos_com_hora else [""]
     
     if jogos_com_hora:
         equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas, key=f"casa_select_{data_str}")
     else:
-        st.warning("⚠️ Fora do período de abertura mapeado. Por favor, selecione o dia 2026-10-23 ou 2026-10-24.")
+        st.warning("⚠️ Calendário oficial indisponível para esta data específica. Por favor, selecione o dia 2026-10-23 ou 2026-10-24.")
         equipa_casa = ""
     
     equipa_fora = ""
@@ -120,7 +115,7 @@ with col_direita:
             with c2:
                 st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
     else:
-        st.info("Escolha uma data ativa no menu da esquerda para mapear as partidas.")
+        st.info("Por favor, selecione o dia 23 ou 24 no calendário da esquerda para mapear as partidas.")
 
 # 3. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
@@ -161,7 +156,7 @@ if equipa_casa and equipa_fora:
                 <div class="directive-box">
                     <b style="color:#FFFFFF;">💡 DIRETRIZ DE ENTRADA PROFISSIONAL:</b><br>
                     • Se a linha aberta na tua casa de apostas for <b>abaixo de {linha_pontos:.1f}</b> ➔ Entra no <b>OVER (Mais Pontos)</b><br>
-• Se a linha aberta na tua casa de apostas for acima de {linha_pontos:.1f} ➔ Entra no UNDER (Menos Pontos)
-
-
-""", unsafe_allow_html=True)
+                    • Se a linha aberta na tua casa de apostas for <b>acima de {linha_pontos:.1f}</b> ➔ Entra no <b>UNDER (Menos Pontos)</b>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
