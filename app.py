@@ -156,7 +156,7 @@ try:
                         f"Parâmetros usados: {res_json.get('parameters', {})}"
                     )
 
-    except requests.RequestException as e:
+except requests.RequestException as e:
         st.error(f"Erro de comunicação com a API-NBA: {e}")
 
     if jogos_com_hora:
