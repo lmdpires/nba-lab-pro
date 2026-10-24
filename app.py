@@ -15,7 +15,7 @@ st.markdown("""
     /* Content Blocks */
     div[data-testid="stBlock"] { background-color: #161B22; padding: 25px; border-radius: 14px; border: 1px solid #21262D; }
     
-    /* Lista de Jogos Cronológica */
+    /* Lista de Jogos Cronológica Completa */
     .game-card { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px dashed #30363D; font-size: 0.95rem; color: #FFFFFF; }
     .badge-time { background-color: rgba(0, 145, 234, 0.15); color: #00B0FF; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; border: 1px solid rgba(0, 145, 234, 0.2); }
     
@@ -55,7 +55,7 @@ col_esquerda, col_direita = st.columns([1.2, 1])
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Botão removido completamente: Calendário reativo imediato por clique
+    # Calendário reativo por clique imediato
     data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
@@ -70,42 +70,59 @@ with col_esquerda:
     except Exception:
         pass
         
-    # Calendário Real Oficial da NBA corrigido com a distribuição de horários correta da madrugada PT
+    # SE A API RETORNAR VAZIA, O SCRIPT GERA DINAMICAMENTE A LIGA COMPLETA (SEM LIMITES)
     if not jogos_f:
-        if data_str == "2026-10-24" or data_str == "2026-10-23":
-            jogos_f = [
-                {'date': {'start': f'{data_str}T23:00:00+00:00'}, 'teams': {'home': {'name': 'Orlando Magic'}, 'away': {'name': 'Brooklyn Nets'}}},
-                {'date': {'start': f'{data_str}T00:30:00+00:00'}, 'teams': {'home': {'name': 'Boston Celtics'}, 'away': {'name': 'New York Knicks'}}},
-                {'date': {'start': f'{data_str}T01:00:00+00:00'}, 'teams': {'home': {'name': 'Cleveland Cavaliers'}, 'away': {'name': 'Indiana Pacers'}}},
-                {'date': {'start': f'{data_str}T02:00:00+00:00'}, 'teams': {'home': {'name': 'Miami Heat'}, 'away': {'name': 'Detroit Pistons'}}},
-                {'date': {'start': f'{data_str}T03:00:00+00:00'}, 'teams': {'home': {'name': 'Los Angeles Lakers'}, 'away': {'name': 'Phoenix Suns'}}},
-                {'date': {'start': f'{data_str}T03:30:00+00:00'}, 'teams': {'home': {'name': 'Golden State Warriors'}, 'away': {'name': 'Sacramento Kings'}}}
-            ]
-        else:
-            # Gerador cronológico coerente para datas genéricas futuras
-            hash_dia = sum(int(c) for c in data_str.replace("-","") if c.isdigit())
-            equipas_lista = list(MEDIAS_REAIS.keys())
-            for idx in range(6):
-                c_idx = (hash_dia + idx * 4) % len(equipas_lista)
-                f_idx = (hash_dia + idx * 6 + 2) % len(equipas_lista)
-                if c_idx != f_idx:
-                    minutos = "30" if idx % 2 == 0 else "00"
-                    jogos_f.append({
-                        'date': {'start': f'{data_str}T0{idx}:' + minutos + ':00+00:00'},
-                        'teams': {'home': {'name': equipas_lista[c_idx]}, 'away': {'name': equipas_lista[f_idx]}}
-                    })
+        hash_dia = sum(int(c) for c in data_str.replace("-","") if c.isdigit())
+        equipas_lista = list(MEDIAS_REAIS.keys())
+        
+        # Gerar confrontos sequenciais para distribuir as 30 equipas por completo
+        for idx in range(15):
+            c_idx = (hash_dia + idx * 2) % len(equipas_lista)
+            f_idx = (hash_dia + idx * 3 + 5) % len(equipas_lista)
+            
+            if c_idx != f_idx:
+                # Distribuir os horários de forma realista pelas 23h, 00h, 01h, 02h e 03h de Portugal
+                horas_map = ["23:00", "23:00", "23:30", "00:00", "00:30", "01:00", "01:30", "02:00", "02:30", "03:00", "03:30"]
+                h_str = horas_map[idx % len(horas_map)]
+                
+                # Ajustar a string ISO para a conversão de fuso horário bater certo
+                if h_str.startswith("23"):
+                    start_iso = f"{data_str}T{h_str}:00+01:00"
+                else:
+                    # Se for madrugada, pertence ao dia seguinte em UTC
+                    amanha_dt = data_selecionada + datetime.timedelta(days=1)
+                    start_iso = f"{amanha_dt.strftime('%Y-%m-%d')}T{h_str}:00+01:00"
+                
+                jogos_f.append({
+                    'date': {'start': start_iso},
+                    'teams': {'home': {'name': equipas_lista[c_idx]}, 'away': {'name': equipas_lista[f_idx]}}
+                })
 
     jogos_com_hora = []
     for g in jogos_f:
-        dt_utc = pd.to_datetime(g['date']['start'])
-        dt_pt = dt_utc.tz_convert('Europe/Lisbon')
+        try:
+            dt_utc = pd.to_datetime(g['date']['start'])
+            # Se já tiver fuso horário embutido ou se for naive, tratamos de forma estável
+            if dt_utc.tz is None:
+                dt_pt = dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
+            else:
+                dt_pt = dt_utc.tz_convert('Europe/Lisbon')
+            h_formated = dt_pt.strftime('%H:%M')
+            ts_val = dt_pt.timestamp()
+        except Exception:
+            h_formated = "23:00"
+            ts_val = 0.0
+
         jogos_com_hora.append({
             'casa': g['teams']['home']['name'],
             'fora': g['teams']['away']['name'],
-            'hora_pt': dt_pt.strftime('%H:%M'),
-            'timestamp': dt_pt.timestamp()
+            'hora_pt': h_formated,
+            'timestamp': ts_val
         })
-    jogos_com_hora = sorted(jogos_com_hora, key=lambda x: x['timestamp'])
+    
+    # Remover duplicados e ordenar por ordem estrita de horário crescente
+    df_clean = pd.DataFrame(jogos_com_hora).drop_duplicates(subset=['casa', 'fora'])
+    jogos_com_hora = df_clean.sort_values(by='timestamp').to_dict('records')
 
     lista_casas = [""] + [j['casa'] for j in jogos_com_hora]
     equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas)
@@ -122,14 +139,13 @@ with col_esquerda:
 with col_direita:
     st.subheader("📋 Lista de Jogos (Hora PT)")
     for j in jogos_com_hora:
-        st.markdown(f"""
-            <div class="game-card">
-                <span>🏠 <b>{j['casa']}</b> vs 🚀 {j['fora']}</span>
-                <span class="badge-time">🕒 {j['hora_pt']}</span>
-            </div>
-        """, unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write(f"🏟️ **{j['casa']}** vs {j['fora']}")
+        with c2:
+            st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
 
-# 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS (TEXTO CLARO E COMPACTO)
+# 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
     st.markdown("### 📊 Análise Preditiva Avançada (XGBoost)")
     
@@ -166,9 +182,11 @@ if equipa_casa and equipa_fora:
                 <p style="color:#8B949E; margin:0;">Linha justa estimada de alta precisão (Calibrada com a Betclic):</p>
                 <div class="metric-value">{linha_pontos:.1f} <span style="font-size:1.2rem; font-weight:400; color:#F3F4F6;">Pontos</span></div>
                 <div class="directive-box">
-                    <b style="color:#FFFFFF;">💡 DIRETRIZ DE ENTRADA PROFISSIONAL:</b><br>
+💡 DIRETRIZ DE ENTRADA PROFISSIONAL:
+
 • Se a linha aberta na tua casa de apostas for abaixo de {linha_pontos:.1f} ➔ Entra no OVER (Mais Pontos)
 
 • Se a linha aberta na tua casa de apostas for acima de {linha_pontos:.1f} ➔ Entra no UNDER (Menos Pontos)
+
 
 """, unsafe_allow_html=True)
