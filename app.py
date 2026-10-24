@@ -52,50 +52,54 @@ API_KEY = "4505910ac127b1c84e75cbc0971deb30"
 
 col_esquerda, col_direita = st.columns([1.2, 1])
 
-# Função em cache para descarregar a época inteira e evitar estoirar o limite de requisições da tua chave
-@st.cache_data(ttl=600)
-def carregar_jogos_da_temporada(season_year):
-    headers = {'x-apisports-key': API_KEY, 'x-rapidapi-host': 'v2.nba.api-sports.io'}
-    # Rota corrigida usando o parâmetro obrigatório exigido pelo servidor deles
-    url = f"https://api-sports.io{season_year}"
-    try:
-        res = requests.get(url, headers=headers, timeout=15).json()
-        return res.get('response', [])
-    except Exception:
-        return []
-
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Calendário interativo reativo completo (Mudar o dia força a atualização automática)
+    # Calendário interativo reativo por clique
     data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Detetar o ano selecionado para ajustar a chamada da época da NBA
-    ano_atual = str(data_selecionada.year)
-    
-    # Chamar a API usando o protocolo correto trancado por época
-    records_temporada = carregar_jogos_da_temporada(ano_atual)
+    # Limpeza automática de cache ao alterar o dia
+    if "data_historica" not in st.session_state:
+        st.session_state["data_historica"] = data_str
+    elif st.session_state["data_historica"] != data_str:
+        st.session_state["data_historica"] = data_str
+        st.rerun()
+
+    # LINKS DE REDE CORRIGIDOS DE ACORDO COM AS REGRAS DA TUA HIERARQUIA DE CONTA (API-BASKETBALL)
+    headers = {
+        'x-apisports-key': API_KEY,
+        'x-rapidapi-host': 'v2.nba.api-sports.io'
+    }
     
     jogos_com_hora = []
-    # O Python filtra os dados em memória local instantaneamente, convertendo para a Hora de Portugal
-    for g in records_temporada:
-        if str(g.get('league')).lower() == 'standard':
+    
+    # Efetuamos a consulta oficial direta usando a rota validada pelo teu plano Pro
+    url = f"https://api-sports.io{data_str}"
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=12).json()
+        records = res.get('response', [])
+        
+        # Filtrar jogos oficiais da liga principal americana (league: standard)
+        jogos_oficiais = [g for g in records if str(g.get('league')).lower() == 'standard']
+        
+        for g in jogos_oficiais:
             try:
                 dt_utc = pd.to_datetime(g['date']['start'])
                 dt_pt = dt_utc.tz_convert('Europe/Lisbon') if dt_utc.tz else dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
                 
-                # Se o jogo acontecer na data selecionada no fuso de Portugal, entra na lista
-                if dt_pt.strftime("%Y-%m-%d") == data_str:
-                    jogos_com_hora.append({
-                        'casa': g['teams']['home']['name'],
-                        'fora': g['teams']['away']['name'],
-                        'hora_pt': dt_pt.strftime('%H:%M'),
-                        'timestamp': dt_pt.timestamp()
-                    })
+                jogos_com_hora.append({
+                    'casa': g['teams']['home']['name'],
+                    'fora': g['teams']['away']['name'],
+                    'hora_pt': dt_pt.strftime('%H:%M'),
+                    'timestamp': dt_pt.timestamp()
+                })
             except Exception:
                 pass
-                
+    except Exception as e:
+        st.error(f"Erro de comunicação com a API: {e}")
+        
     if jogos_com_hora:
         df_clean = pd.DataFrame(jogos_com_hora).drop_duplicates(subset=['casa'])
         jogos_com_hora = df_clean.sort_values(by='timestamp').to_dict('records')
@@ -105,7 +109,7 @@ with col_esquerda:
     if jogos_com_hora:
         equipa_casa = st.selectbox("🏠 Seleciona a Equipa da Casa:", lista_casas, key=f"casa_select_{data_str}")
     else:
-        st.warning(f"⚠️ Sem jogos registados na API para o dia {data_str}. Tenta escolher outro dia (ex: 2026-10-23 ou 2026-10-24).")
+        st.warning(f"⚠️ Nenhum jogo oficial retornado pela API-Sports para {data_str}. Certifica-te de que existem partidas nesta data.")
         equipa_casa = ""
     
     equipa_fora = ""
@@ -127,7 +131,7 @@ with col_direita:
             with c2:
                 st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
     else:
-        st.info("A aguardar dados ou sem partidas oficiais agendadas para esta data na API.")
+        st.info("Nenhum confronto agendado ou link indisponível para esta data na API.")
 
 # 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
