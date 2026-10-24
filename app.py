@@ -5,150 +5,139 @@ import streamlit as st
 
 st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 
-# -------------------- VISUAL DESIGN --------------------
+# ------------------------- DESIGN SYSTEM -------------------------
 st.markdown("""
 <style>
 :root {
-    --bg: #0b0f15;
-    --surface: #121923;
-    --surface-2: #182230;
-    --border: #263445;
-    --muted: #9aa9bb;
-    --text: #f4f7fb;
-    --blue: #39a9ff;
-    --green: #23d18b;
-    --orange: #ffae57;
+  --bg: #090e15;
+  --panel: #111a26;
+  --panel2: #152130;
+  --line: #29384a;
+  --muted: #91a2b7;
+  --white: #f4f7fb;
+  --blue: #5bb9ff;
+  --green: #35d49a;
+  --amber: #ffbf69;
 }
 .stApp {
-    background:
-      radial-gradient(ellipse at 12% 0%, rgba(25,91,145,.17), transparent 36%),
-      radial-gradient(ellipse at 92% 8%, rgba(35,209,139,.08), transparent 28%),
-      var(--bg);
-    color: var(--text);
+  background:
+    radial-gradient(ellipse at 8% -5%, rgba(28,104,157,.18), transparent 33%),
+    radial-gradient(ellipse at 100% 0%, rgba(25,115,91,.10), transparent 27%),
+    var(--bg);
+  color: var(--white);
 }
-.block-container { max-width: 1500px; padding-top: 2rem; padding-bottom: 3rem; }
-h1, h2, h3, h4 { color: var(--text) !important; letter-spacing: -.025em; }
-h1 { font-weight: 850 !important; font-size: clamp(2rem, 3vw, 3rem) !important; }
-h2 { font-size: 1.55rem !important; font-weight: 760 !important; }
-h3 { font-size: 1.22rem !important; font-weight: 720 !important; }
-p, label, .stCaption { color: var(--muted); }
-div[data-testid="stCaptionContainer"] p { color: #91a0b2; }
-hr { border-color: #202c3a !important; margin: 1.4rem 0 !important; }
-div[data-testid="stVerticalBlockBorderWrapper"] {
-    background: linear-gradient(145deg, rgba(22,32,45,.98), rgba(15,22,32,.98));
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 16px;
+.block-container {max-width: 1540px; padding: 1.6rem 2rem 3rem 2rem;}
+h1,h2,h3,h4 {color: var(--white) !important; letter-spacing: -.025em;}
+h1 {font-size: 2.35rem !important; font-weight: 850 !important;}
+h2 {font-size: 1.5rem !important; font-weight: 780 !important;}
+h3 {font-size: 1.13rem !important; font-weight: 760 !important;}
+p, label {color: var(--muted);}
+hr {border-color: #233041 !important; margin: 1.25rem 0 !important;}
+[data-testid="stCaptionContainer"] p {color: #91a2b7;}
+.hero {
+  border: 1px solid #2b4054; border-radius: 18px; padding: 22px 25px;
+  background: linear-gradient(112deg, #13283a 0%, #111b28 56%, #11251f 100%);
+  margin-bottom: 22px;
 }
-div[data-testid="stDateInput"] input,
-div[data-testid="stNumberInput"] input,
-div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-    background: #eaf0f7 !important;
-    color: #17202b !important;
-    border-radius: 9px !important;
-    border: 1px solid #c7d2df !important;
-    min-height: 43px;
+.hero-top {display:flex; align-items:center; gap:14px;}
+.hero-ball {font-size:2.55rem; line-height:1;}
+.hero-title {font-size:2.05rem; font-weight:900; letter-spacing:-.045em; color:#fff;}
+.hero-sub {color:#a9bbce; margin-top:5px; font-size:.98rem;}
+.hero-right {margin-left:auto; text-align:right; color:#a9bbce; font-size:.8rem;}
+.eyebrow {font-size:.72rem; text-transform:uppercase; letter-spacing:.13em; font-weight:850; color:#83a0bb; margin-bottom:5px;}
+.section-title {font-size:1.3rem; font-weight:820; color:#f5f8fc; margin-bottom:4px;}
+.panel {
+  background: linear-gradient(145deg, rgba(19,29,42,.98), rgba(14,22,32,.98));
+  border:1px solid #29384a; border-radius:15px; padding:17px 18px;
 }
-div[data-testid="stDateInput"] label,
-div[data-testid="stNumberInput"] label { color: #aebbd0 !important; font-weight: 600; }
+.panel-head {display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px;}
+.panel-note {font-size:.84rem; color:#91a2b7;}
+.date-badge {display:inline-block; padding:5px 9px; border-radius:7px; background:#1a2c3e; border:1px solid #304c65; color:#a9d9ff; font-size:.8rem; font-weight:750;}
+div[data-testid="stDateInput"] input {
+  background:#edf3f9 !important; color:#17202b !important;
+  border:1px solid #c6d3e0 !important; border-radius:9px !important; min-height:43px;
+}
+div[data-testid="stDateInput"] label {color:#b6c5d7 !important; font-weight:700;}
 div[data-testid="stButton"] > button {
-    width: 100%;
-    min-height: 62px;
-    white-space: normal;
-    text-align: left;
-    line-height: 1.35;
-    padding: 12px 14px;
-    border-radius: 11px;
-    border: 1px solid #2a394b;
-    background: linear-gradient(145deg, #182230, #111923);
-    color: #eef5ff;
-    font-weight: 650;
-    box-shadow: 0 3px 12px rgba(0,0,0,.12);
-    transition: all .16s ease-in-out;
+  border-radius:10px; border:1px solid #2a3a4d;
+  background:#141f2d; color:#eaf2fb; font-weight:700;
+  min-height:43px; transition:all .14s ease;
 }
 div[data-testid="stButton"] > button:hover {
-    border-color: var(--blue);
-    background: #1b2a3b;
-    color: #ffffff;
-    transform: translateY(-1px);
+  border-color:#5bb9ff; color:#fff; background:#1a2b3d;
 }
 div[data-testid="stButton"] > button[kind="primary"] {
-    background: linear-gradient(110deg, #087e61, #0e594d);
-    border: 1px solid #27d79a;
-    color: #ffffff;
-    box-shadow: 0 0 0 1px rgba(35,209,139,.12), 0 5px 18px rgba(0,0,0,.2);
+  background:linear-gradient(100deg,#087c5a,#11624c);
+  border:1px solid #35d49a; color:#fff;
 }
 div[data-testid="stButton"] > button[kind="primary"]:hover {
-    background: linear-gradient(110deg, #09916f, #126a5b);
-    border-color: #69efbf;
-}
-div[data-testid="stTabs"] button {
-    color: #aebbd0 !important;
-    font-weight: 700 !important;
-}
-div[data-testid="stTabs"] button[aria-selected="true"] {
-    color: #45dba3 !important;
-}
-div[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
-    background-color: var(--green) !important;
+  background:linear-gradient(100deg,#0b946b,#16745a);
 }
 div[data-testid="stMetric"] {
-    background: #111a25;
-    border: 1px solid #29384a;
-    border-radius: 13px;
-    padding: 16px;
+  background:#0d1621; border:1px solid #2a3a4d; border-radius:12px; padding:14px;
 }
-div[data-testid="stMetricLabel"] { color: #a8b6c9 !important; }
-div[data-testid="stMetricValue"] { color: #f5f9ff !important; font-weight: 800; }
-div[data-testid="stAlert"] { border-radius: 11px; }
-.small-label {
-    color: #9aabc0; text-transform: uppercase; font-size: .76rem;
-    letter-spacing: .1em; font-weight: 800; margin-bottom: 6px;
+div[data-testid="stMetricLabel"] {color:#9db0c4 !important;}
+div[data-testid="stMetricValue"] {color:#f7fbff !important; font-weight:850;}
+div[data-testid="stTabs"] button {font-weight:750 !important;}
+.fixture-row {
+  border:1px solid #29384a; border-radius:11px; background:#111a26;
+  padding:12px 14px; margin-bottom:8px;
 }
-.hero {
-    background: linear-gradient(115deg, rgba(20,48,70,.9), rgba(16,29,43,.88) 58%, rgba(18,46,40,.75));
-    border: 1px solid #2b4052; border-radius: 18px; padding: 22px 24px; margin: 8px 0 22px 0;
+.fixture-team {font-size:.96rem; font-weight:760; color:#f2f6fb;}
+.fixture-meta {font-size:.78rem; color:#92a5ba; margin-top:4px;}
+.fixture-time {
+  display:inline-block; border:1px solid #2d4d69; background:#142b3e;
+  color:#7bc8ff; padding:5px 8px; border-radius:7px;
+  font-size:.78rem; font-weight:800; white-space:nowrap;
 }
-.hero-sub { color: #a9bbcf; font-size: 1rem; margin-top: 5px; }
-.game-header {
-    display:flex; justify-content:space-between; align-items:center; gap:12px;
-    flex-wrap:wrap; padding: 2px 0 12px 0;
+.market {
+  height:100%; border-radius:15px; padding:18px;
+  background:linear-gradient(145deg,#14231f,#101821);
+  border:1px solid #285b49;
 }
-.time-pill {
-    display:inline-block; border:1px solid rgba(57,169,255,.3);
-    background:rgba(57,169,255,.1); color:#67c1ff; border-radius:8px;
-    padding:5px 9px; font-size:.83rem; font-weight:750;
+.market.total {background:linear-gradient(145deg,#142337,#101821); border-color:#2b5277;}
+.market-kicker {font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; font-weight:850; color:#77dcb4;}
+.market.total .market-kicker {color:#7cc9ff;}
+.market-heading {font-size:1.2rem; font-weight:850; color:#fff; margin:7px 0 3px;}
+.market-copy {font-size:.84rem; color:#9eafc2; min-height:40px;}
+.market-value {font-size:2.45rem; line-height:1.1; font-weight:900; color:#f5fbff; margin:16px 0 4px;}
+.market-subvalue {font-size:.85rem; color:#a7b8ca;}
+.mini-rule {height:1px; background:#2b3b4b; margin:15px 0;}
+.selection-banner {
+  background:linear-gradient(100deg,#14283a,#14251f);
+  border:1px solid #2b4658; border-radius:14px; padding:17px 19px; margin:10px 0 17px;
 }
-.market-card {
-    border-radius: 15px; padding: 21px; height:100%;
-    background: linear-gradient(145deg, #15251f, #111923);
-    border: 1px solid #275d49;
+.selected-title {font-size:1.42rem; font-weight:880; color:#fff;}
+.selected-sub {font-size:.83rem; color:#a1b3c6; margin-top:5px;}
+.empty-state {
+  border:1px dashed #33485c; background:#101923; border-radius:13px;
+  padding:26px 20px; text-align:center; color:#9eafc2;
 }
-.market-card-blue {
-    border-radius: 15px; padding: 21px; height:100%;
-    background: linear-gradient(145deg, #142437, #111923);
-    border: 1px solid #27527a;
-}
-.market-title { color:#f6fbff; font-size:1.12rem; font-weight:800; margin-bottom:5px; }
-.market-sub { color:#9bacc0; font-size:.9rem; }
-.kicker { color:#9eafc3; text-transform:uppercase; font-size:.75rem; letter-spacing:.1em; font-weight:800; }
-.disclaimer { color:#8392a5; font-size:.82rem; border-top:1px solid #202c3a; padding-top:12px; margin-top:22px; }
-@media (max-width: 800px) {
-  .block-container { padding-left: 1rem; padding-right: 1rem; }
-  div[data-testid="stButton"] > button { min-height: 56px; }
+.empty-icon {font-size:2rem; margin-bottom:7px;}
+.disclaimer {border-top:1px solid #233041; padding-top:12px; margin-top:22px; color:#8495a9; font-size:.8rem;}
+@media(max-width: 900px) {
+  .block-container {padding-left:1rem; padding-right:1rem;}
+  .hero-title {font-size:1.65rem;}
+  .hero-right {display:none;}
+  .market-value {font-size:2rem;}
 }
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------- HEADER --------------------
+# ------------------------- HEADER -------------------------
 st.markdown("""
 <div class="hero">
-  <div style="font-size:2.1rem;font-weight:900;letter-spacing:-.04em;color:#fff">🏀 NBA LAB PRO</div>
-  <div class="hero-sub">Calendário de jogos, seleção de confrontos e análise de mercados num só lugar.</div>
+  <div class="hero-top">
+    <div class="hero-ball">🏀</div>
+    <div>
+      <div class="hero-title">NBA LAB <span style="color:#65c5ff">PRO</span></div>
+      <div class="hero-sub">NBA intelligence desk · calendário, probabilidades e análise de mercados</div>
+    </div>
+    <div class="hero-right">PRE-GAME ANALYSIS<br><span style="color:#35d49a">● WORKSPACE</span></div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Chave guardada em Streamlit Secrets.
 try:
     API_KEY = st.secrets["API_SPORTS_NBA_KEY"]
 except Exception:
@@ -167,29 +156,29 @@ MEDIAS_REAIS = {
     "Toronto Raptors": 112.5, "Utah Jazz": 115.7, "Washington Wizards": 113.1
 }
 
-# -------------------- DATE + FIXTURES --------------------
-col_date, col_fixtures = st.columns([0.78, 1.7], gap="large")
-jogos = []
-
-with col_date:
-    st.markdown('<div class="small-label">01 / Calendário</div>', unsafe_allow_html=True)
-    st.subheader("Escolher dia")
-    data = st.date_input("Data dos jogos", value=datetime.date.today(), key="nba_date")
-    data_str = data.strftime("%Y-%m-%d")
-    st.caption("Seleciona o dia para carregar os confrontos oficiais.")
-    st.markdown("---")
-    st.markdown('<div class="small-label">Estado da ligação</div>', unsafe_allow_html=True)
+# ------------------------- FETCH FIXTURES -------------------------
+date_col, list_col = st.columns([0.78, 1.85], gap="large")
+games = []
+with date_col:
+    st.markdown('<div class="eyebrow">01 / Matchday</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Escolher data</div>', unsafe_allow_html=True)
+    selected_date = st.date_input("Calendário", value=datetime.date.today(), key="nba_matchday")
+    date_str = selected_date.strftime("%Y-%m-%d")
+    st.markdown(f'<span class="date-badge">📅 {selected_date.strftime("%A, %d %b %Y")}</span>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     if API_KEY:
-        st.success("Chave API configurada")
+        st.success("API ligada", icon="🟢")
     else:
-        st.error("Falta configurar a chave API nas Secrets.")
+        st.error("Configura API_SPORTS_NBA_KEY nas Secrets.", icon="🔑")
+    st.caption("A lista é atualizada quando alteras a data.")
 
-with col_fixtures:
-    st.markdown('<div class="small-label">02 / Calendário oficial</div>', unsafe_allow_html=True)
-    st.subheader(f"Jogos de {data.strftime('%d/%m/%Y')}")
+with list_col:
+    st.markdown('<div class="eyebrow">02 / Official schedule</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-title">Jogos do dia <span style="color:#7d91a8;font-size:.9rem;font-weight:600">· {selected_date.strftime("%d/%m/%Y")}</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel-note">Seleciona um confronto para abrir os dois mercados abaixo.</div>', unsafe_allow_html=True)
     if API_KEY:
-        season = str(data.year if data.month >= 10 else data.year - 1)
-        params = {"date": data_str, "season": season, "league": "standard"}
+        season = str(selected_date.year if selected_date.month >= 10 else selected_date.year - 1)
+        params = {"date": date_str, "season": season, "league": "standard"}
         try:
             response = requests.get(
                 "https://v2.nba.api-sports.io/games",
@@ -208,147 +197,158 @@ with col_fixtures:
                         teams = item.get("teams") or {}
                         home = teams.get("home") or {}
                         away = teams.get("visitors") or teams.get("away") or {}
-                        start = (item.get("date") or {}).get("start")
-                        if not home.get("name") or not away.get("name") or not start:
+                        start_time = (item.get("date") or {}).get("start")
+                        if not home.get("name") or not away.get("name") or not start_time:
                             continue
-                        dt_pt = pd.to_datetime(start, utc=True).tz_convert("Europe/Lisbon")
-                        jogos.append({
-                            "id": str(item.get("id", f"{home['name']}-{away['name']}-{start}")),
-                            "casa": home["name"],
-                            "fora": away["name"],
-                            "hora": dt_pt.strftime("%H:%M"),
-                            "timestamp": dt_pt.timestamp()
+                        local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
+                        games.append({
+                            "id": str(item.get("id", f"{home['name']}-{away['name']}-{start_time}")),
+                            "home": home["name"], "away": away["name"],
+                            "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp()
                         })
         except requests.RequestException as exc:
             st.error(f"Erro de ligação à API-NBA: {exc}")
         except ValueError as exc:
-            st.error(f"A API não devolveu JSON válido: {exc}")
+            st.error(f"A resposta da API não é JSON válido: {exc}")
 
-jogos = sorted(jogos, key=lambda j: j["timestamp"])
-dedup = []
-seen = set()
-for j in jogos:
-    k = (j["casa"], j["fora"], j["hora"])
-    if k not in seen:
-        seen.add(k)
-        dedup.append(j)
-jogos = dedup
+games.sort(key=lambda x: x["timestamp"])
+unique_games, seen = [], set()
+for game in games:
+    key = (game["home"], game["away"], game["time"])
+    if key not in seen:
+        seen.add(key)
+        unique_games.append(game)
+games = unique_games
 
-if jogos:
-    available_ids = {j["id"] for j in jogos}
-    if st.session_state.get("nba_selected_game") not in available_ids:
-        st.session_state["nba_selected_game"] = jogos[0]["id"]
+# Reset selection when selected date changes, or when current game is absent.
+current_game_ids = {g["id"] for g in games}
+if st.session_state.get("nba_selection_date") != date_str:
+    st.session_state["nba_selection_date"] = date_str
+    st.session_state["nba_selected_game"] = games[0]["id"] if games else None
+elif st.session_state.get("nba_selected_game") not in current_game_ids:
+    st.session_state["nba_selected_game"] = games[0]["id"] if games else None
 
-    st.markdown("#### Clica num confronto para abrir os mercados")
-    # Dois cartões por linha; a seleção fica visualmente destacada.
-    for start_idx in range(0, len(jogos), 2):
-        row = st.columns(2, gap="medium")
-        for offset, col in enumerate(row):
-            idx = start_idx + offset
-            if idx >= len(jogos):
-                continue
-            j = jogos[idx]
-            selected = st.session_state.get("nba_selected_game") == j["id"]
-            label = f"{'✓  ' if selected else '🏀  '}{j['casa']}  vs  {j['fora']}\\n🕒 {j['hora']} · Hora de Portugal"
-            with col:
-                if st.button(label, key=f"game_{data_str}_{j['id']}", type="primary" if selected else "secondary"):
-                    st.session_state["nba_selected_game"] = j["id"]
-                    st.rerun()
+if games:
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    for game in games:
+        is_selected = st.session_state.get("nba_selected_game") == game["id"]
+        row_cols = st.columns([4.6, 1.0, 1.15], gap="small")
+        with row_cols[0]:
+            marker = "●" if is_selected else "○"
+            color = "#35d49a" if is_selected else "#647a91"
+            st.markdown(
+                f"""<div class="fixture-row">
+                <div style="font-size:.72rem;font-weight:850;letter-spacing:.1em;color:{color};margin-bottom:5px">{marker} {"SELECTED GAME" if is_selected else "NBA MATCHUP"}</div>
+                <div class="fixture-team">{game['away']} <span style="color:#71879d;font-weight:500">at</span> {game['home']}</div>
+                <div class="fixture-meta">Visitante <span style="color:#647b91">/</span> Casa</div>
+                </div>""",
+                unsafe_allow_html=True
+            )
+        with row_cols[1]:
+            st.markdown(f'<div style="padding-top:19px;text-align:center"><span class="fixture-time">🕒 {game["time"]}</span></div>', unsafe_allow_html=True)
+        with row_cols[2]:
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            if st.button("✓ Selecionado" if is_selected else "Analisar jogo →",
+                         key=f"choose_{date_str}_{game['id']}",
+                         type="primary" if is_selected else "secondary"):
+                st.session_state["nba_selected_game"] = game["id"]
+                st.rerun()
 else:
     if API_KEY:
-        st.info("Não foram devolvidos jogos para esta data. Experimenta outro dia ou confirma os dados devolvidos pela API.")
+        st.markdown('<div class="empty-state"><div class="empty-icon">🗓️</div><b style="color:#f3f7fb">Sem jogos para esta data</b><br>Escolhe outro dia para carregar os confrontos disponíveis.</div>', unsafe_allow_html=True)
     else:
-        st.info("Depois de configurares a chave API, os jogos do dia aparecem aqui.")
+        st.info("Quando a chave API estiver configurada, os jogos oficiais aparecerão aqui.")
 
-selected_game = next((j for j in jogos if j["id"] == st.session_state.get("nba_selected_game")), None)
+selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
 
-# -------------------- MARKETS --------------------
-st.markdown("---")
-st.markdown('<div class="small-label">03 / Análise do confronto</div>', unsafe_allow_html=True)
-st.subheader("Mercados do jogo selecionado")
+# ------------------------- TWO MARKET PANELS -------------------------
+st.markdown("<br><hr>", unsafe_allow_html=True)
+st.markdown('<div class="eyebrow">03 / Matchup analysis</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Análise do confronto</div>', unsafe_allow_html=True)
 
 if not selected_game:
-    st.markdown("""
-    <div style="border:1px dashed #334458;border-radius:14px;padding:28px;text-align:center;background:#111923">
-      <div style="font-size:2rem">👆</div>
-      <div style="font-size:1.05rem;font-weight:750;color:#eef5ff;margin:8px 0">Escolhe um jogo na lista acima</div>
-      <div style="color:#91a0b2">Os mercados Moneyline e Over / Under aparecem aqui depois da seleção.</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="empty-state"><div class="empty-icon">👆</div><b style="color:#f3f7fb">Seleciona um jogo</b><br>As previsões Moneyline e Over / Under aparecem aqui, lado a lado.</div>', unsafe_allow_html=True)
 else:
-    casa = selected_game["casa"]
-    fora = selected_game["fora"]
+    home = selected_game["home"]
+    away = selected_game["away"]
     st.markdown(
-        f"""<div class="game-header">
-          <div><div class="kicker">Confronto selecionado</div>
-          <div style="font-size:1.5rem;font-weight:850;color:#fff;margin-top:4px">{casa} <span style="color:#5b718a">vs</span> {fora}</div></div>
-          <div class="time-pill">🕒 {selected_game['hora']} · Portugal</div>
+        f"""<div class="selection-banner">
+        <div class="eyebrow">Selected matchup · {selected_date.strftime("%d %b %Y")}</div>
+        <div class="selected-title">{away} <span style="color:#5c7690">at</span> {home}</div>
+        <div class="selected-sub">🕒 {selected_game["time"]} · Hora de Portugal &nbsp;&nbsp; | &nbsp;&nbsp; Visitante vs Casa</div>
         </div>""",
         unsafe_allow_html=True
     )
 
-    tab_moneyline, tab_total = st.tabs(["🏆  MONEYLINE · Vencedor", "🏀  OVER / UNDER · Total de pontos"])
+    # Demonstration-only heuristics preserved from the existing version.
+    factor = (len(home) + len(away) * 3) % 10
+    p_home = min(0.90, max(0.10, 0.54 + factor * 0.015))
+    p_away = 1 - p_home
+    fair_home = 1 / p_home
+    fair_away = 1 / p_away
+    total_reference = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
 
-    # Mantidos como placeholders demonstrativos: não são um modelo treinado.
-    factor = (len(casa) + len(fora) * 3) % 10
-    prob_home = min(0.90, max(0.10, 0.54 + factor * 0.015))
-    prob_away = 1 - prob_home
-    fair_home = 1 / prob_home
-    fair_away = 1 / prob_away
-
-    with tab_moneyline:
-        st.markdown('<div class="kicker">Mercado 01</div>', unsafe_allow_html=True)
-        st.markdown("### Qual é a estimativa para o vencedor?")
-        left, right = st.columns(2, gap="medium")
-        with left:
-            st.metric(f"{casa} · Casa", f"{prob_home*100:.1f}%", f"Odd teórica {fair_home:.2f}")
-        with right:
-            st.metric(f"{fora} · Fora", f"{prob_away*100:.1f}%", f"Odd teórica {fair_away:.2f}")
-        st.markdown("")
-        odd_market = st.number_input(
-            f"Odd de mercado para {casa} vencer",
+    market1, market2 = st.columns(2, gap="large")
+    with market1:
+        st.markdown(f"""
+        <div class="market">
+          <div class="market-kicker">Mercado 01 · Moneyline</div>
+          <div class="market-heading">🏆 Vencedor do jogo</div>
+          <div class="market-copy">Probabilidade estimada para cada equipa e odd teórica correspondente.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        m1, m2 = st.columns(2, gap="small")
+        with m1:
+            st.metric(f"{home} · Casa", f"{p_home*100:.1f}%", f"Odd teórica {fair_home:.2f}")
+        with m2:
+            st.metric(f"{away} · Fora", f"{p_away*100:.1f}%", f"Odd teórica {fair_away:.2f}")
+        market_odd = st.number_input(
+            f"Odd de mercado — vitória {home}",
             min_value=1.01, value=1.95, step=0.05,
-            key=f"odd_ml_{selected_game['id']}"
+            key=f"market_odd_{selected_game['id']}"
         )
-        if odd_market > fair_home:
-            advantage = (odd_market / fair_home - 1) * 100
-            st.success(f"A odd está {advantage:.1f}% acima da odd teórica demonstrativa. Isto não comprova valor real.")
+        if market_odd > fair_home:
+            edge = (market_odd / fair_home - 1) * 100
+            st.success(f"Odd de mercado {edge:.1f}% acima da odd teórica demonstrativa.")
         else:
-            st.info("A odd de mercado não supera a odd teórica desta estimativa demonstrativa.")
+            st.info("A odd introduzida não supera a odd teórica demonstrativa.")
+        st.caption("Estimativa heurística, ainda não validada com dados históricos.")
 
-    with tab_total:
-        mean_home = MEDIAS_REAIS.get(casa, 114.5)
-        mean_away = MEDIAS_REAIS.get(fora, 112.2)
-        reference_total = mean_home + mean_away
-        st.markdown('<div class="kicker">Mercado 02</div>', unsafe_allow_html=True)
-        st.markdown("### Total de pontos da partida")
-        st.metric("Referência demonstrativa", f"{reference_total:.1f} pontos")
-        over_col, under_col = st.columns(2, gap="medium")
+    with market2:
+        st.markdown("""
+        <div class="market total">
+          <div class="market-kicker">Mercado 02 · Total points</div>
+          <div class="market-heading">🏀 Over / Under</div>
+          <div class="market-copy">Referência de pontos para a partida e comparação com a linha de mercado.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        st.metric("Total de pontos · referência", f"{total_reference:.1f}")
+        over_line = st.number_input(
+            "Linha de mercado — total",
+            min_value=150.0, max_value=300.0, value=220.5, step=0.5,
+            key=f"total_line_{selected_game['id']}"
+        )
+        over_col, under_col = st.columns(2, gap="small")
         with over_col:
-            st.markdown('<div class="market-card"><div class="market-title">📈 OVER · Mais pontos</div><div class="market-sub">Compara a linha de mercado com a referência.</div></div>', unsafe_allow_html=True)
-            over_line = st.number_input(
-                "Linha de mercado — OVER", min_value=150.0, max_value=300.0,
-                value=220.5, step=0.5, key=f"over_{selected_game['id']}"
-            )
-            if over_line < reference_total:
-                st.success("A linha está abaixo da referência demonstrativa.")
+            st.markdown('<div class="panel"><div style="color:#5bd6a6;font-weight:850">📈 OVER</div><div class="panel-note">Mais pontos</div></div>', unsafe_allow_html=True)
+            if over_line < total_reference:
+                st.success(f"Linha {total_reference-over_line:.1f} pts abaixo da referência.")
             else:
-                st.info("A linha não está abaixo da referência demonstrativa.")
+                st.info("A linha não está abaixo da referência.")
         with under_col:
-            st.markdown('<div class="market-card-blue"><div class="market-title">📉 UNDER · Menos pontos</div><div class="market-sub">Compara a linha de mercado com a referência.</div></div>', unsafe_allow_html=True)
-            under_line = st.number_input(
-                "Linha de mercado — UNDER", min_value=150.0, max_value=300.0,
-                value=220.5, step=0.5, key=f"under_{selected_game['id']}"
-            )
-            if under_line > reference_total:
-                st.success("A linha está acima da referência demonstrativa.")
+            st.markdown('<div class="panel"><div style="color:#70c5ff;font-weight:850">📉 UNDER</div><div class="panel-note">Menos pontos</div></div>', unsafe_allow_html=True)
+            if over_line > total_reference:
+                st.success(f"Linha {over_line-total_reference:.1f} pts acima da referência.")
             else:
-                st.info("A linha não está acima da referência demonstrativa.")
+                st.info("A linha não está acima da referência.")
+        st.caption("Soma de médias fixas por equipa; não é uma previsão calibrada.")
 
 st.markdown("""
 <div class="disclaimer">
-Nota técnica: as probabilidades de Moneyline são heurísticas e as médias de pontos são fixas.
-Esta interface melhora a navegação e apresentação, mas as estimativas não devem ser tratadas como
-previsões validadas nem como recomendação de aposta.
+NBA LAB PRO · Interface de análise, não casa de apostas. As probabilidades atuais são demonstrativas
+e não resultam de um modelo treinado. Antes de usar previsões para decisões reais, é necessário
+validar o modelo com dados históricos, odds de mercado e testes fora da amostra.
 </div>
 """, unsafe_allow_html=True)
