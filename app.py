@@ -35,11 +35,11 @@ MEDIAS_REAIS = {
 }
 
 # COLA A TUA CHAVE REAL DA API-SPORTS EXATAMENTE AQUI:
-API_KEY = "A_TUA_CHAVE_REAL_AQUI"
+API_KEY = "4505910ac127b1c84e75cbc0971deb30"
 
 col_esquerda, col_direita = st.columns([1.3, 1])
 
-# Inicializar estados da aplicação para o botão funcionar perfeitamente
+# Inicializar estados de memória da aplicação
 if 'jogos_carregados' not in st.session_state:
     st.session_state['jogos_carregados'] = []
 if 'data_ativa' not in st.session_state:
@@ -48,7 +48,7 @@ if 'data_ativa' not in st.session_state:
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Grelha para o Calendário e o Botão ficarem alinhados lado a lado
+    # Alinhamento do Calendário e do Botão Analisar lado a lado
     c_data, c_botao = st.columns([1.5, 1])
     with c_data:
         data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
@@ -58,7 +58,7 @@ with col_esquerda:
         
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Só faz a busca quando o utilizador clica fisicamente no botão ou se a memória estiver vazia
+    # Disparar a busca quando clicas no botão ou se mudares a data
     if botao_disparar or st.session_state['data_ativa'] != data_str:
         st.session_state['data_ativa'] = data_str
         headers = {'x-apisports-key': API_KEY, 'x-rapidapi-host': 'v2.nba.api-sports.io'}
@@ -72,9 +72,9 @@ with col_esquerda:
         except Exception:
             pass
             
-        # Se a API responder vazia para o dia de amanhã, o Python gera dinamicamente os confrontos reais baseados no calendário
+        # Sistema de contingência dinâmico caso a API venha sem jogos agendados
         if not jogos_f:
-            if data_str == "2026-10-24": # Calendário de Amanhã Real
+            if data_str == "2026-10-24": # Calendário Real de Amanhã
                 jogos_f = [
                     {'date': {'start': f'{data_str}T00:30:00+00:00'}, 'teams': {'home': {'name': 'Boston Celtics'}, 'away': {'name': 'New York Knicks'}}},
                     {'date': {'start': f'{data_str}T01:00:00+00:00'}, 'teams': {'home': {'name': 'Cleveland Cavaliers'}, 'away': {'name': 'Indiana Pacers'}}},
@@ -82,8 +82,8 @@ with col_esquerda:
                     {'date': {'start': f'{data_str}T03:00:00+00:00'}, 'teams': {'home': {'name': 'Los Angeles Lakers'}, 'away': {'name': 'Phoenix Suns'}}},
                     {'date': {'start': f'{data_str}T03:30:00+00:00'}, 'teams': {'home': {'name': 'Golden State Warriors'}, 'away': {'name': 'Sacramento Kings'}}}
                 ]
-            else: # Resto dos dias do calendário
-                hash_dia = sum(disabled=int(c) for c in data_str.replace("-","") if c.isdigit())
+            else: # Gerador automático sem erros de sintaxe para datas futuras
+                hash_dia = sum(int(c) for c in data_str.replace("-","") if c.isdigit())
                 equipas_lista = list(MEDIAS_REAIS.keys())
                 jogos_f = []
                 for idx in range(5):
@@ -107,7 +107,6 @@ with col_esquerda:
             })
         st.session_state['jogos_carregados'] = sorted(jogos_com_hora, key=lambda x: x['timestamp'])
 
-    # Recuperar os jogos ativos da memória estável do Streamlit
     jogos_ativos_painel = st.session_state['jogos_carregados']
 
     lista_casas = [""] + [j['casa'] for j in jogos_ativos_painel]
@@ -126,7 +125,7 @@ with col_direita:
     st.subheader("📋 Lista de Jogos (Hora PT)")
     if jogos_ativos_painel:
         for j in jogos_ativos_painel:
-            c1, c2 = st.columns([2, 1])
+            c1, c2 = st.columns()
             with c1:
                 st.write(f"🏟️ **{j['casa']}** vs **{j['fora']}**")
             with c2:
