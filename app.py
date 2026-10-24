@@ -55,11 +55,10 @@ col_esquerda, col_direita = st.columns([1.2, 1])
 with col_esquerda:
     st.subheader("⚙️ Configuração do Confronto")
     
-    # Calendário nativo reativo (Inicia na data real de hoje em 2026)
-    data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date.today())
+    # Calendário interativo reativo em 2026
+    data_selecionada = st.date_input("Escolha a Data da Jornada:", datetime.date(2026, 10, 24))
     data_str = data_selecionada.strftime("%Y-%m-%d")
     
-    # Limpeza de cache dinâmica ao mudar de dia para evitar congelamento de ecrã
     if "data_historica" not in st.session_state:
         st.session_state["data_historica"] = data_str
     elif st.session_state["data_historica"] != data_str:
@@ -68,7 +67,7 @@ with col_esquerda:
 
     headers = {'x-apisports-key': API_KEY, 'x-rapidapi-host': 'v2.nba.api-sports.io'}
     
-    # ESTRATÉGIA ANTIBLOQUEIO: Consultar o dia atual e o dia anterior para capturar jogos da madrugada
+    # Puxar dados de ontem e de hoje para cobrir as viragens de fuso horário da madrugada americana
     ontem_str = (data_selecionada - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     
     records_completos = []
@@ -81,14 +80,13 @@ with col_esquerda:
             pass
 
     jogos_com_hora = []
-    # Filtrar os jogos que pertencem estritamente à janela horária de Portugal (PT) da data escolhida
     for g in records_completos:
         if str(g.get('league')).lower() == 'standard':
             try:
                 dt_utc = pd.to_datetime(g['date']['start'])
                 dt_pt = dt_utc.tz_convert('Europe/Lisbon') if dt_utc.tz else dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
                 
-                # O jogo pertence à nossa janela se começar no dia escolhido (a partir das 00:00) ou nas primeiras horas da madrugada seguinte
+                # Filtrar apenas as partidas que ocorrem na data real selecionada em Portugal
                 if dt_pt.strftime("%Y-%m-%d") == data_str:
                     jogos_com_hora.append({
                         'casa': g['teams']['home']['name'],
@@ -100,7 +98,6 @@ with col_esquerda:
                 pass
                 
     if jogos_com_hora:
-        # Remover duplicados de segurança e ordenar por ordem estrita cronológica crescente
         df_clean = pd.DataFrame(jogos_com_hora).drop_duplicates(subset=['casa'])
         jogos_com_hora = df_clean.sort_values(by='timestamp').to_dict('records')
 
@@ -124,14 +121,14 @@ with col_esquerda:
 with col_direita:
     st.subheader("📋 Lista de Jogos (Hora PT)")
     if jogos_com_hora:
-        for j in widgets_ativos_painel if 'widgets_ativos_painel' in locals() else jogos_com_hora:
+        for j in jogos_com_hora: # CORREÇÃO DA VARIÁVEL: Removido o erro de compilação antigo
             c1, c2 = st.columns(2)
             with c1:
                 st.write(f"🏟️ **{j['casa']}** vs {j['fora']}")
             with c2:
                 st.markdown(f"<span class='badge-time'>🕒 {j['hora_pt']}</span>", unsafe_allow_html=True)
     else:
-        st.info("A consultar os servidores oficiais da NBA...")
+        st.info("Nenhum confronto agendado ou a aguardar resposta dos servidores da NBA...")
 
 # 4. PAINÉIS DE PREVISÃO DE ALTO CONTRASTE REFORMULADOS
 if equipa_casa and equipa_fora:
@@ -172,7 +169,7 @@ if equipa_casa and equipa_fora:
                 <div class="directive-box">
                     <b style="color:#FFFFFF;">💡 DIRETRIZ DE ENTRADA PROFISSIONAL:</b><br>
                     • Se a linha aberta na tua casa de apostas for <b>abaixo de {linha_pontos:.1f}</b> ➔ Entra no <b>OVER (Mais Pontos)</b><br>
-                    • Se a linha aberta na tua casa de apostas for acima de {linha_pontos:.1f} ➔ Entra no UNDER (Menos Pontos)
-
-
-                """, unsafe_allow_html=True)
+                    • Se a linha aberta na tua casa de apostas for <b>acima de {linha_pontos:.1f}</b> ➔ Entra no <b>UNDER (Menos Pontos)</b>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
