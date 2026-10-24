@@ -35,7 +35,7 @@ MEDIAS_REAIS = {
 }
 
 # 2. INTRODUZ A TUA CHAVE DA API-SPORTS
-API_KEY = "A_TUA_CHAVE_REAL_AQUI"
+API_KEY = "4505910ac127b1c84e75cbc0971deb30"
 
 col_esquerda, col_direita = st.columns([1.3, 1])
 
