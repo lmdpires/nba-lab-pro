@@ -66,46 +66,107 @@ with col_esquerda:
         st.rerun()
 
     headers = {
-        'x-apisports-key': API_KEY,
-        'x-rapidapi-host': 'v2.nba.api-sports.io'
+        "x-apisports-key": API_KEY
     }
-    
+
     jogos_com_hora = []
-    
-    # Rota oficial limpa
-    url_base_oficial = "https://api-sports.io"
-    
-    # PARAMETRIZAÇÃO ADAPTADA: Injetada a season exigida obrigatoriamente pela API-Basketball
+
+    # Endpoint correto da API-NBA v2
+    url = "https://v2.nba.api-sports.io/games"
+
     parametros_busca = {
-        'date': data_str,
-        'season': '2026'
+        "date": data_str,
+        "season": "2026",
+        "league": "standard"
     }
     
-    try:
-        response = requests.get(url_base_oficial, headers=headers, params=parametros_busca, timeout=12)
-        
-        # Proteção robusta contra retornos de erro do servidor
-        if response.status_code == 200:
+ try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=parametros_busca,
+            timeout=20
+        )
+
+        # Mostrar erros HTTP com detalhe
+        if response.status_code != 200:
+            st.error(
+                f"Erro HTTP {response.status_code}: "
+                f"{response.text[:1000]}"
+            )
+        else:
             res_json = response.json()
-            records = res_json.get('response', [])
-            
-            # Filtrar apenas confrontos da liga principal da NBA
-            jogos_oficiais = [g for g in records if str(g.get('league')).lower() == 'standard']
-            
-            for g in jogos_oficiais:
-                try:
-                    dt_utc = pd.to_datetime(g['date']['start'])
-                    dt_pt = dt_utc.tz_convert('Europe/Lisbon') if dt_utc.tz else dt_utc.tz_localize('UTC').tz_convert('Europe/Lisbon')
-                    
-                    jogos_com_hora.append({
-                        'casa': g['teams']['home']['name'],
-                        'fora': g['teams']['away']['name'],
-                        'hora_pt': dt_pt.strftime('%H:%M'),
-                        'timestamp': dt_pt.timestamp()
-                    })
-                except Exception:
-                    pass
-    except Exception as e:
+
+            # A API pode devolver erros mesmo com HTTP 200
+            erros = res_json.get("errors", {})
+
+            if erros:
+                st.error(f"Erro devolvido pela API-NBA: {erros}")
+            else:
+                records = res_json.get("response", [])
+
+                for g in records:
+                    try:
+                        # A liga principal pode vir como texto
+                        liga = g.get("league")
+                        if isinstance(liga, dict):
+                            liga = liga.get("name", liga.get("league"))
+
+                        if str(liga).lower() != "standard":
+                            continue
+
+                        equipas = g.get("teams") or {}
+                        casa = equipas.get("home") or {}
+                        fora = (
+                            equipas.get("visitors")
+                            or equipas.get("away")
+                            or {}
+                        )
+
+                        nome_casa = casa.get("name")
+                        nome_fora = fora.get("name")
+
+                        data_inicio = (g.get("date") or {}).get("start")
+
+                        if not nome_casa or not nome_fora or not data_inicio:
+                            continue
+
+                        # Converter a hora UTC para a hora de Portugal
+                        dt_utc = pd.to_datetime(
+                            data_inicio, utc=True
+                        )
+                        dt_pt = dt_utc.tz_convert("Europe/Lisbon")
+
+                        jogos_com_hora.append({
+                            "casa": nome_casa,
+                            "fora": nome_fora,
+                            "hora_pt": dt_pt.strftime("%H:%M"),
+                            "timestamp": dt_pt.timestamp()
+                        })
+
+                    except (KeyError, TypeError, ValueError) as e:
+                        st.warning(
+                            f"Foi ignorado um registo com dados incompletos: {e}"
+                        )
+
+                if not jogos_com_hora:
+                    st.info(
+                        f"A API respondeu corretamente, mas não devolveu "
+                        f"jogos da liga standard para {data_str}. "
+                        f"Parâmetros usados: {res_json.get('parameters', {})}"
+                    )
+
+    except requests.RequestException as e:
+        st.error(f"Erro de comunicação com a API-NBA: {e}")
+
+    if jogos_com_hora:
+        df_clean = pd.DataFrame(jogos_com_hora)
+        df_clean = df_clean.drop_duplicates(
+            subset=["casa", "fora"]
+        )
+        jogos_com_hora = (
+            df_clean.sort_values(by="timestamp").to_dict("records")
+        )
         st.error(f"Erro de comunicação com a API: {e}")
         
     if jogos_com_hora:
