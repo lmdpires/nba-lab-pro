@@ -55,14 +55,14 @@ hr {margin:.6rem 0!important;border-color:var(--line)!important}
 .section-label {font-size:.67rem;text-transform:uppercase;letter-spacing:.12em;font-weight:850;color:#83a1bc;margin:0 0 6px}
 .left-panel,.right-panel {background:rgba(14,22,32,.7);border:1px solid #243447;border-radius:12px;padding:12px}
 .fixture-help {font-size:.72rem;color:#8fa4ba;margin-bottom:8px}
-.game-button div[data-testid="stButton"] > button {text-align:left!important;justify-content:flex-start!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:7px 9px!important;line-height:1.25!important;border-radius:7px!important;margin-bottom:2px!important;font-size:.76rem!important}
+.game-button div[data-testid="stButton"] > button {text-align:center!important;justify-content:center!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:9px 10px!important;line-height:1.3!important;border-radius:8px!important;margin-bottom:3px!important;font-size:.78rem!important;font-weight:650!important;letter-spacing:.005em!important}\n.game-button div[data-testid="stButton"] > button[kind="primary"] {background:linear-gradient(105deg,#0e6b55,#125844)!important;border:1px solid #35d9a2!important;border-left:4px solid #64f3c0!important;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;font-weight:850!important;font-size:.82rem!important;letter-spacing:.01em!important;box-shadow:0 0 0 1px rgba(53,217,162,.12),0 4px 12px rgba(0,0,0,.18)!important}\n.game-button div[data-testid="stButton"] > button[kind="primary"] p {color:#ffffff!important;font-weight:850!important}\n.game-button div[data-testid="stButton"] > button[kind="primary"]:hover {background:linear-gradient(105deg,#11785f,#17694f)!important;border-color:#73f4c5!important}
 div[data-testid="stButton"] > button {border:1px solid #2a3d51;background:#121e2b;color:#eaf2fb;font-weight:650;justify-content:flex-start!important;text-align:left!important;transition:background .15s,border-color .15s}
 div[data-testid="stButton"] > button:hover {border-color:#68c4ff;background:#182a3c;color:#fff}
-div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #72f0c4,0 2px 8px rgba(0,0,0,.12)}
-.st-key-save_prediction_area {background:linear-gradient(100deg,rgba(18,91,72,.22),rgba(17,29,42,.96));border:1px solid #28785f;border-left:4px solid #35d49a;border-radius:10px;padding:12px 14px 13px;margin-top:10px;margin-bottom:12px}
+div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff!important;-webkit-text-fill-color:#fff!important;font-weight:800;box-shadow:inset 3px 0 0 #72f0c4,0 2px 8px rgba(0,0,0,.12)}
+.st-key-save_prediction_area {background:linear-gradient(100deg,rgba(17,53,52,.7),rgba(16,27,40,.98) 72%);border:1px solid #2b665c;border-left:4px solid #35d9a2;border-radius:10px;padding:12px 14px 13px;margin-top:10px;margin-bottom:12px}
 .st-key-save_prediction_area [data-testid="stMarkdownContainer"] p {margin-bottom:4px}
-.st-key-save_prediction_area div[data-testid="stButton"] > button {background:#20b981!important;border:1px solid #55e6ad!important;color:#071b16!important;font-size:.95rem!important;font-weight:850!important;letter-spacing:.01em;min-height:44px!important;height:44px!important;padding:9px 14px!important;border-radius:8px!important;justify-content:center!important;text-align:center!important;box-shadow:0 3px 12px rgba(32,185,129,.2)!important}
-.st-key-save_prediction_area div[data-testid="stButton"] > button:hover {background:#35d49a!important;border-color:#8af5ca!important;transform:translateY(-1px)}
+.st-key-save_prediction_area div[data-testid="stButton"] > button {background:linear-gradient(100deg,#147b63,#176b60)!important;border:1px solid #45d8ad!important;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;font-size:.9rem!important;font-weight:800!important;letter-spacing:.005em!important;min-height:46px!important;height:46px!important;padding:10px 14px!important;border-radius:8px!important;justify-content:center!important;text-align:center!important;box-shadow:0 3px 10px rgba(0,0,0,.16)!important}
+.st-key-save_prediction_area div[data-testid="stButton"] > button:hover {background:linear-gradient(100deg,#199575,#1b8171)!important;border-color:#83f2d0!important;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;transform:translateY(-1px)}
 
 div[data-testid="stDateInput"] input {background:#eaf1f8!important;color:#182331!important;border-radius:7px!important;min-height:36px}
 div[data-testid="stDateInput"] label {font-size:.75rem!important;font-weight:700!important}
@@ -210,7 +210,7 @@ with left:
                     )
                 with match_col:
                     st.markdown('<div class="game-button">', unsafe_allow_html=True)
-                    label = f"{'▸ ' if is_selected else ''}{game['away']} @ {game['home']}"
+                    label = f"▸ **{game['away']} @ {game['home']}**" if is_selected else f"{game['away']} @ {game['home']}"
                     if st.button(label, key=f"choose_{date_str}_{game['id']}",
                                  type="primary" if is_selected else "secondary", use_container_width=True):
                         st.session_state["nba_selected_game"] = game["id"]
@@ -288,10 +288,11 @@ with right:
 
         with st.container(key="save_prediction_area"):
             st.markdown("### Guardar previsão")
-            st.caption("Regista agora esta previsão para a comparar com o resultado final.")
+            st.caption("Regista os valores atuais antes do jogo para os avaliar depois.")
             save_clicked = st.button(
-                "🔒  GUARDAR PREVISÃO ANTES DO JOGO",
+                "▣  Guardar previsão",
                 key=f"save_prediction_{selected_game['id']}",
+                type="primary",
                 use_container_width=True
             )
         if save_clicked:
