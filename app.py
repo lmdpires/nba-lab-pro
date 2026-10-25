@@ -276,8 +276,10 @@ if API_KEY:
                     local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
                     status_obj = item.get("status") or {}
                     scores_obj = item.get("scores") or {}
-                    home_score = (scores_obj.get("home") or {}).get("total")
-                    away_score = (scores_obj.get("visitors") or scores_obj.get("away") or {}).get("total")
+                    home_score_obj = scores_obj.get("home") or {}
+                    away_score_obj = scores_obj.get("visitors") or scores_obj.get("away") or {}
+                    home_score = home_score_obj.get("points", home_score_obj.get("total"))
+                    away_score = away_score_obj.get("points", away_score_obj.get("total"))
                     try:
                         home_score = int(home_score) if home_score is not None else None
                     except (TypeError, ValueError):
@@ -308,10 +310,71 @@ for game in games:
         deduped.append(game)
 games = deduped
 
-# Automatic prediction freeze and result reconciliation. Runs whenever the app reruns.
+def parse_api_game(item):
+    teams = item.get("teams") or {}
+    home = teams.get("home") or {}
+    away = teams.get("visitors") or teams.get("away") or {}
+    start_time = (item.get("date") or {}).get("start")
+    if not home.get("name") or not away.get("name") or not start_time:
+        return None
+    local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
+    status_obj = item.get("status") or {}
+    scores_obj = item.get("scores") or {}
+    hs = scores_obj.get("home") or {}
+    aws = scores_obj.get("visitors") or scores_obj.get("away") or {}
+    home_score = hs.get("points", hs.get("total"))
+    away_score = aws.get("points", aws.get("total"))
+    try:
+        home_score = int(home_score) if home_score is not None else None
+    except (TypeError, ValueError):
+        home_score = None
+    try:
+        away_score = int(away_score) if away_score is not None else None
+    except (TypeError, ValueError):
+        away_score = None
+    return {
+        "id": str(item.get("id", f"{home['name']}-{away['name']}-{start_time}")),
+        "home": home["name"], "away": away["name"],
+        "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp(),
+        "status": str(status_obj.get("short") or status_obj.get("long") or "NS").upper(),
+        "status_long": str(status_obj.get("long") or ""),
+        "home_score": home_score, "away_score": away_score
+    }
+
+# Load the persistent prediction history and fetch any past dates that still need results.
 log_df = load_log()
+result_games_by_id = {str(g["id"]): g for g in games}
+if API_KEY and not log_df.empty:
+    unresolved_dates = sorted({
+        str(d) for d in log_df.loc[
+            ~log_df["game_status"].astype(str).str.lower().eq("final"), "game_date"
+        ].dropna().tolist()
+        if str(d) and str(d) != date_str
+    })
+    # Query only dates represented in the log, rather than re-fetching the entire season.
+    for historical_date in unresolved_dates:
+        try:
+            hist_dt = datetime.date.fromisoformat(historical_date)
+            hist_season = str(hist_dt.year if hist_dt.month >= 10 else hist_dt.year - 1)
+            hist_response = requests.get(
+                "https://v2.nba.api-sports.io/games",
+                headers={"x-apisports-key": API_KEY},
+                params={"date": historical_date, "season": hist_season, "league": "standard"},
+                timeout=15
+            )
+            if hist_response.status_code != 200:
+                continue
+            hist_payload = hist_response.json()
+            for item in hist_payload.get("response", []):
+                parsed = parse_api_game(item)
+                if parsed:
+                    result_games_by_id[str(parsed["id"])] = parsed
+        except (requests.RequestException, ValueError, TypeError):
+            continue
+
+# Automatic prediction freeze and result reconciliation. Runs whenever the app reruns.
 log_df, new_snapshots = auto_freeze_predictions(games, log_df)
-log_df, updated_results = upsert_api_results(games, log_df)
+log_df, updated_results = upsert_api_results(list(result_games_by_id.values()), log_df)
 if new_snapshots or updated_results:
     save_log(log_df)
 
@@ -510,3 +573,6 @@ else:
         use_container_width=True
     )
     st.warning("Limitação importante: o registo automático só acontece quando o Streamlit executa uma atualização. Para garantir o congelamento exato em T−5, é necessário um agendador externo ou manter uma atualização periódica ativa. A linha total usada automaticamente é uma referência demonstrativa de 220,5, não uma linha de bookmaker. As odds de mercado ficam vazias nesta versão.")
+    pending_final = log_df[~log_df["game_status"].astype(str).str.lower().eq("final")]
+    if not pending_final.empty:
+        st.caption(f"Há {len(pending_final)} previsões ainda sem resultado final confirmado pela API. Os resultados são reconciliados pelas datas guardadas no histórico em cada atualização.")
