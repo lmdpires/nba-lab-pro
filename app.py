@@ -1,9 +1,35 @@
 import datetime
+import uuid
+from pathlib import Path
 import requests
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
+
+# Registo CSV local; descarregar backups regularmente se a app estiver na Streamlit Cloud.
+LOG_PATH = Path(__file__).with_name("nba_prediction_log.csv")
+LOG_COLUMNS = [
+    "record_id", "saved_at", "game_date", "game_id", "start_time",
+    "away_team", "home_team", "moneyline_pick", "p_home", "p_away",
+    "home_market_odds", "total_reference", "total_line", "total_pick",
+    "home_score", "away_score", "moneyline_result", "total_result"
+]
+
+def load_log():
+    if LOG_PATH.exists():
+        try:
+            df = pd.read_csv(LOG_PATH)
+            for col in LOG_COLUMNS:
+                if col not in df.columns:
+                    df[col] = None
+            return df[LOG_COLUMNS]
+        except Exception:
+            pass
+    return pd.DataFrame(columns=LOG_COLUMNS)
+
+def save_log(df):
+    df.to_csv(LOG_PATH, index=False)
 
 # Compact, two-column workspace: fixtures on the left, both markets on the right.
 st.markdown("""
@@ -252,4 +278,117 @@ with right:
                     st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
             st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
 
+        st.markdown("---")
+        st.markdown("**Guardar esta análise**")
+        st.caption("Guarda uma fotografia das previsões atuais para as avaliar depois do jogo.")
+        if st.button("＋ Guardar previsão para avaliação", key=f"save_prediction_{selected_game['id']}", use_container_width=True):
+            log_df = load_log()
+            record = {
+                "record_id": str(uuid.uuid4())[:8],
+                "saved_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                "game_date": selected_date.strftime("%Y-%m-%d"),
+                "game_id": selected_game["id"],
+                "start_time": selected_game["time"],
+                "away_team": away,
+                "home_team": home,
+                "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
+                "p_home": round(float(p_home), 4),
+                "p_away": round(float(p_away), 4),
+                "home_market_odds": round(float(market_odd), 2),
+                "total_reference": round(float(total_reference), 1),
+                "total_line": round(float(over_line), 1),
+                "total_pick": "Over" if total_reference > over_line else ("Under" if total_reference < over_line else "Sem seleção"),
+                "home_score": None,
+                "away_score": None,
+                "moneyline_result": "Pendente",
+                "total_result": "Pendente"
+            }
+            log_df = pd.concat([log_df, pd.DataFrame([record])], ignore_index=True)
+            save_log(log_df)
+            st.success("Previsão guardada. Regista o resultado final quando o jogo terminar.")
+
 st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel de análise As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
+
+
+st.markdown("## Registo de previsões e resultados")
+st.caption("Guarda a previsão antes do jogo e regista o resultado final para medir a taxa de acerto.")
+
+log_df = load_log()
+if log_df.empty:
+    st.info("Ainda não há previsões guardadas. Seleciona um jogo e utiliza «Guardar previsão para avaliação».")
+else:
+    pending = log_df[log_df["home_score"].isna() | log_df["away_score"].isna()].copy()
+    if not pending.empty:
+        pending["display"] = pending.apply(
+            lambda r: f"{r['game_date']} · {r['away_team']} @ {r['home_team']} · registo {r['record_id']}", axis=1
+        )
+        chosen_label = st.selectbox("Jogo por avaliar", pending["display"].tolist(), key="pending_result_select")
+        chosen_record = pending[pending["display"] == chosen_label].iloc[0]
+        result_col1, result_col2, result_col3 = st.columns([1, 1, 1.4], gap="small")
+        with result_col1:
+            home_score = st.number_input(
+                f"Pontos {chosen_record['home_team']} (casa)", min_value=0, max_value=200, value=0, step=1,
+                key=f"home_score_{chosen_record['record_id']}"
+            )
+        with result_col2:
+            away_score = st.number_input(
+                f"Pontos {chosen_record['away_team']} (fora)", min_value=0, max_value=200, value=0, step=1,
+                key=f"away_score_{chosen_record['record_id']}"
+            )
+        with result_col3:
+            st.write("")
+            st.write("")
+            if st.button("Registar resultado final", key=f"submit_result_{chosen_record['record_id']}", use_container_width=True):
+                if home_score == 0 and away_score == 0:
+                    st.error("Confirma os pontos antes de guardar o resultado.")
+                else:
+                    idx = log_df.index[log_df["record_id"].astype(str) == str(chosen_record["record_id"])][0]
+                    total_score = int(home_score + away_score)
+                    pick_ml = str(log_df.at[idx, "moneyline_pick"])
+                    pick_total = str(log_df.at[idx, "total_pick"])
+                    if home_score == away_score:
+                        ml_result = "Empate — verificar resultado"
+                    else:
+                        home_won = home_score > away_score
+                        away_won = away_score > home_score
+                        ml_result = "Acertou" if ((pick_ml == "Casa" and home_won) or (pick_ml == "Fora" and away_won)) else "Falhou"
+                    line = float(log_df.at[idx, "total_line"])
+                    if pick_total == "Sem seleção" or total_score == line:
+                        total_result = "Push/sem seleção"
+                    else:
+                        total_won = (pick_total == "Over" and total_score > line) or (pick_total == "Under" and total_score < line)
+                        total_result = "Acertou" if total_won else "Falhou"
+                    log_df.at[idx, "home_score"] = int(home_score)
+                    log_df.at[idx, "away_score"] = int(away_score)
+                    log_df.at[idx, "moneyline_result"] = ml_result
+                    log_df.at[idx, "total_result"] = total_result
+                    save_log(log_df)
+                    st.success(f"Resultado registado · Moneyline: {ml_result} · Total: {total_result}")
+                    st.rerun()
+    else:
+        st.success("Todos os registos guardados têm resultado.")
+
+    display_cols = [
+        "game_date", "away_team", "home_team", "moneyline_pick", "total_line", "total_pick",
+        "home_score", "away_score", "moneyline_result", "total_result"
+    ]
+    st.dataframe(log_df[display_cols], use_container_width=True, hide_index=True)
+    finished_ml = log_df[log_df["moneyline_result"].isin(["Acertou", "Falhou"])]
+    finished_total = log_df[log_df["total_result"].isin(["Acertou", "Falhou"])]
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        rate = (finished_ml["moneyline_result"] == "Acertou").mean() * 100 if not finished_ml.empty else 0
+        st.metric("Acerto Moneyline", f"{rate:.1f}%", f"{len(finished_ml)} jogos avaliados")
+    with col2:
+        rate = (finished_total["total_result"] == "Acertou").mean() * 100 if not finished_total.empty else 0
+        st.metric("Acerto Over/Under", f"{rate:.1f}%", f"{len(finished_total)} jogos avaliados")
+    with col3:
+        st.metric("Previsões guardadas", int(len(log_df)))
+    st.download_button(
+        "Descarregar backup CSV",
+        data=log_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="nba_prediction_log_backup.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+    st.warning("O histórico fica num CSV no ambiente da aplicação. Na Streamlit Cloud, descarrega backups regularmente: ficheiros locais podem não sobreviver a reinícios ou novas implementações.")
