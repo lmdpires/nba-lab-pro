@@ -10,26 +10,26 @@ st.markdown("""
 <style>
 :root { --bg:#0a1018; --panel:#111b27; --line:#26384b; --muted:#8fa4ba; --white:#f2f6fb; --blue:#68c4ff; --green:#35d49a; }
 .stApp {background:radial-gradient(ellipse at 10% 0%,rgba(27,91,133,.13),transparent 32%),var(--bg);color:var(--white)}
-.block-container {max-width:1720px;padding:2.65rem 1.1rem .9rem!important}
-header[data-testid="stHeader"] {background:#0a1018!important;height:2.45rem!important}
-header[data-testid="stHeader"] [data-testid="stToolbar"] {background:transparent!important}
+.block-container {max-width:1720px;padding:2.25rem 1.1rem .9rem!important}
+header[data-testid="stHeader"] {background:#0a1018!important;height:2rem!important;min-height:2rem!important;border-bottom:1px solid #172432!important}
+header[data-testid="stHeader"] [data-testid="stToolbar"] {background:transparent!important;height:2rem!important;min-height:2rem!important}
 h1,h2,h3,p,label {margin-top:0}
-h1 {font-size:1.38rem!important;line-height:1.35!important;letter-spacing:-.025em;font-weight:900!important;margin:0!important;padding:0!important;overflow:visible!important}
+h1 {font-size:1.42rem!important;line-height:1.4!important;letter-spacing:-.025em;font-weight:900!important;margin:0!important;padding:0!important;overflow:visible!important}
 h2 {font-size:1.05rem!important;font-weight:800!important}
 h3 {font-size:.95rem!important;font-weight:800!important}
 p,label,[data-testid="stCaptionContainer"] p {color:var(--muted)}
 hr {margin:.6rem 0!important;border-color:var(--line)!important}
-.topbar {display:flex;align-items:center;gap:12px;padding:11px 15px;margin-bottom:11px;min-height:68px;box-sizing:border-box;overflow:visible;border:1px solid #2c4559;border-radius:10px;background:linear-gradient(100deg,#14283a,#111b27 70%,#12251f)}
+.topbar {display:flex;align-items:center;gap:13px;padding:10px 16px;margin-bottom:11px;min-height:66px;box-sizing:border-box;overflow:visible;border:1px solid #2c4559;border-radius:10px;background:linear-gradient(100deg,#14283a,#111b27 70%,#12251f);box-shadow:0 5px 18px rgba(0,0,0,.12)}
 .ball {font-size:1.55rem;line-height:1;flex:0 0 auto}
-.brand-sub {font-size:.73rem;color:#9eb2c7;margin-top:2px;line-height:1.35}
-.status {margin-left:auto;font-size:.66rem;color:#53dca9;font-weight:800;letter-spacing:.08em;white-space:nowrap}
+.brand-sub {font-size:.74rem;color:#b0c2d4;margin-top:3px;line-height:1.4}
+.status {margin-left:auto;font-size:.66rem;color:#53dca9;font-weight:800;letter-spacing:.09em;white-space:nowrap;padding:6px 9px;border:1px solid #245344;border-radius:999px;background:rgba(16,76,59,.22)}
 .section-label {font-size:.67rem;text-transform:uppercase;letter-spacing:.12em;font-weight:850;color:#83a1bc;margin:0 0 6px}
 .left-panel,.right-panel {background:rgba(14,22,32,.7);border:1px solid #243447;border-radius:12px;padding:12px}
 .fixture-help {font-size:.72rem;color:#8fa4ba;margin-bottom:8px}
 .game-button div[data-testid="stButton"] > button {text-align:left!important;justify-content:flex-start!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:7px 9px!important;line-height:1.25!important;border-radius:7px!important;margin-bottom:2px!important;font-size:.76rem!important}
 div[data-testid="stButton"] > button {border:1px solid #2a3d51;background:#121e2b;color:#eaf2fb;font-weight:650;justify-content:flex-start!important;text-align:left!important;transition:background .15s,border-color .15s}
 div[data-testid="stButton"] > button:hover {border-color:#68c4ff;background:#182a3c;color:#fff}
-div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #72f0c4}
+div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #72f0c4,0 2px 8px rgba(0,0,0,.12)}
 div[data-testid="stDateInput"] input {background:#eaf1f8!important;color:#182331!important;border-radius:7px!important;min-height:36px}
 div[data-testid="stDateInput"] label {font-size:.75rem!important;font-weight:700!important}
 div[data-testid="stMetric"] {background:#0c1520;border:1px solid #26384b;border-radius:8px;padding:7px 9px}
