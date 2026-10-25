@@ -250,16 +250,32 @@ with right:
                 st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
             with b:
                 st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
+            # Equal-height labels keep the numeric fields aligned on the same baseline.
+            st.markdown("""
+            <style>
+            div[data-testid="stHorizontalBlock"] .odds-field-label {
+                height: 42px;
+                display: flex;
+                align-items: flex-end;
+                padding-bottom: 6px;
+                color: #8fa6bd;
+                font-size: 0.82rem;
+                line-height: 1.2;
+            }
+            </style>
+            """, unsafe_allow_html=True)
             odds_home_col, odds_away_col = st.columns(2, gap="small")
             with odds_home_col:
+                st.markdown(f'<div class="odds-field-label">Odd de mercado · Casa ({home})</div>', unsafe_allow_html=True)
                 market_odd_home = st.number_input(
-                    f"Odd de mercado · Casa ({home})", min_value=1.01, value=1.95, step=0.05,
-                    key=f"market_odd_home_{selected_game['id']}"
+                    " ", min_value=1.01, value=1.95, step=0.05,
+                    label_visibility="collapsed", key=f"market_odd_home_{selected_game['id']}"
                 )
             with odds_away_col:
+                st.markdown(f'<div class="odds-field-label">Odd de mercado · Visitante ({away})</div>', unsafe_allow_html=True)
                 market_odd_away = st.number_input(
-                    f"Odd de mercado · Visitante ({away})", min_value=1.01, value=1.95, step=0.05,
-                    key=f"market_odd_away_{selected_game['id']}"
+                    " ", min_value=1.01, value=1.95, step=0.05,
+                    label_visibility="collapsed", key=f"market_odd_away_{selected_game['id']}"
                 )
             edge_home = (market_odd_home / fair_home - 1) * 100
             edge_away = (market_odd_away / fair_away - 1) * 100
