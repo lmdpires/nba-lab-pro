@@ -72,10 +72,10 @@ def upsert_api_results(games, log_df):
     if log_df.empty:
         return log_df, 0
     changed = 0
-    by_id = {str(g.get("id")): g for g in games}
+    by_id = {normalize_game_id(g.get("id")): g for g in games}
     for idx, row in log_df.iterrows():
-        game = by_id.get(str(row.get("game_id")))
-        if not game or game.get("status") not in ("FT", "AOT", "FTOT", "FINAL"):
+        game = by_id.get(normalize_game_id(row.get("game_id")))
+        if not game or game.get("status") != "FT":
             continue
         home_score, away_score = game.get("home_score"), game.get("away_score")
         if home_score is None or away_score is None:
@@ -109,7 +109,7 @@ def auto_freeze_predictions(games, log_df, now=None):
         freeze_at = kickoff - datetime.timedelta(minutes=5)
         if now < freeze_at or str(game["id"]) in existing_ids:
             continue
-        if game.get("status") in ("FT", "AOT", "FTOT", "FINAL", "LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
+        if game.get("status") in ("FT", "LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
             # Do not create a new "pre-game" prediction once play has started.
             continue
         home, away = game["home"], game["away"]
@@ -248,6 +248,49 @@ with left:
     selected_date = st.date_input("Data dos jogos", value=datetime.date.today(), key="nba_matchday", format="DD/MM/YYYY")
     date_str = selected_date.strftime("%Y-%m-%d")
 
+def normalize_game_status(status_obj):
+    """Normalize API-Sports status variants into a small stable set."""
+    status_obj = status_obj or {}
+    short = str(status_obj.get("short") or "").strip().upper()
+    long_status = str(status_obj.get("long") or "").strip().lower()
+    if short in {"FT", "AOT", "FTOT", "FINAL", "FINISHED", "ENDED"} or any(
+        word in long_status for word in ("finished", "final", "game over", "ended", "terminé", "terminado")
+    ):
+        return "FT"
+    if short in {"Q1", "Q2", "Q3", "Q4", "OT", "HT", "LIVE", "IN"} or any(
+        word in long_status for word in ("in play", "live", "quarter", "halftime", "overtime", "en cours")
+    ):
+        return short if short in {"Q1", "Q2", "Q3", "Q4", "OT", "HT"} else "LIVE"
+    if short in {"NS", "TBD", "SCHED", "PST"} or any(
+        word in long_status for word in ("not started", "scheduled", "postponed", "time to be defined")
+    ):
+        return "NS"
+    return short or ("FT" if "final" in long_status else "NS")
+
+def normalize_score(value):
+    """Handle both numeric scores and nested API-Sports score objects."""
+    if isinstance(value, dict):
+        for key in ("points", "total", "score"):
+            if value.get(key) is not None:
+                return normalize_score(value[key])
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+def normalize_game_id(value):
+    if value is None:
+        return ""
+    try:
+        number = float(value)
+        if number.is_integer():
+            return str(int(number))
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
 # Load fixtures for the chosen date.
 games = []
 if API_KEY:
@@ -276,23 +319,13 @@ if API_KEY:
                     local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
                     status_obj = item.get("status") or {}
                     scores_obj = item.get("scores") or {}
-                    home_score_obj = scores_obj.get("home") or {}
-                    away_score_obj = scores_obj.get("visitors") or scores_obj.get("away") or {}
-                    home_score = home_score_obj.get("points", home_score_obj.get("total"))
-                    away_score = away_score_obj.get("points", away_score_obj.get("total"))
-                    try:
-                        home_score = int(home_score) if home_score is not None else None
-                    except (TypeError, ValueError):
-                        home_score = None
-                    try:
-                        away_score = int(away_score) if away_score is not None else None
-                    except (TypeError, ValueError):
-                        away_score = None
+                    home_score = normalize_score(scores_obj.get("home"))
+                    away_score = normalize_score(scores_obj.get("visitors") or scores_obj.get("away"))
                     games.append({
                         "id": str(item.get("id", f"{home['name']}-{away['name']}-{start_time}")),
                         "home": home["name"], "away": away["name"],
                         "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp(),
-                        "status": str(status_obj.get("short") or status_obj.get("long") or "NS").upper(),
+                        "status": normalize_game_status(status_obj),
                         "status_long": str(status_obj.get("long") or ""),
                         "home_score": home_score, "away_score": away_score
                     })
@@ -320,23 +353,13 @@ def parse_api_game(item):
     local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
     status_obj = item.get("status") or {}
     scores_obj = item.get("scores") or {}
-    hs = scores_obj.get("home") or {}
-    aws = scores_obj.get("visitors") or scores_obj.get("away") or {}
-    home_score = hs.get("points", hs.get("total"))
-    away_score = aws.get("points", aws.get("total"))
-    try:
-        home_score = int(home_score) if home_score is not None else None
-    except (TypeError, ValueError):
-        home_score = None
-    try:
-        away_score = int(away_score) if away_score is not None else None
-    except (TypeError, ValueError):
-        away_score = None
+    home_score = normalize_score(scores_obj.get("home"))
+    away_score = normalize_score(scores_obj.get("visitors") or scores_obj.get("away"))
     return {
         "id": str(item.get("id", f"{home['name']}-{away['name']}-{start_time}")),
         "home": home["name"], "away": away["name"],
         "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp(),
-        "status": str(status_obj.get("short") or status_obj.get("long") or "NS").upper(),
+        "status": normalize_game_status(status_obj),
         "status_long": str(status_obj.get("long") or ""),
         "home_score": home_score, "away_score": away_score
     }
@@ -407,7 +430,7 @@ with left:
                 with match_col:
                     st.markdown('<div class="game-button">', unsafe_allow_html=True)
                     status = game.get("status", "NS")
-                    if status in ("FT", "AOT", "FTOT", "FINAL") and game.get("home_score") is not None and game.get("away_score") is not None:
+                    if status == "FT" and game.get("home_score") is not None and game.get("away_score") is not None:
                         label = f"{game['home']} {game['home_score']}–{game['away_score']} {game['away']} · FINAL"
                     elif status in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
                         label = f"🔴 {game['home']} vs {game['away']} · EM DIRETO"
@@ -427,7 +450,7 @@ with right:
     else:
         home, away = selected_game["home"], selected_game["away"]
         status_code = selected_game.get("status", "NS")
-        if status_code in ("FT", "AOT", "FTOT", "FINAL") and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
+        if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
             status_label = f"FINAL · {selected_game['home_score']}–{selected_game['away_score']}"
         elif status_code in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
             status_label = "EM DIRETO"
@@ -439,6 +462,22 @@ with right:
           <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">CASA → VISITANTE</span> &nbsp; · &nbsp; <b>{status_label}</b></div>
         </div>
         """, unsafe_allow_html=True)
+
+        if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
+            final_total = int(selected_game["home_score"]) + int(selected_game["away_score"])
+            st.success(f"RESULTADO FINAL: {home} {selected_game['home_score']}–{selected_game['away_score']} {away} · Total: {final_total} pontos")
+            saved_row = log_df[
+                log_df["game_id"].map(normalize_game_id) == normalize_game_id(selected_game["id"])
+            ] if not log_df.empty else pd.DataFrame()
+            if not saved_row.empty:
+                saved = saved_row.iloc[-1]
+                r1, r2 = st.columns(2, gap="small")
+                with r1:
+                    st.markdown(f"**Moneyline:** {saved.get('moneyline_pick', '—')} · **{saved.get('moneyline_result', 'Pendente')}**")
+                with r2:
+                    st.markdown(f"**Over/Under:** {saved.get('total_pick', '—')} · **{saved.get('total_result', 'Pendente')}** (linha {saved.get('total_line', '—')})")
+            else:
+                st.info("O resultado final está disponível, mas não existe uma previsão congelada para este jogo. Não é possível classificar um acerto retroativamente.")
 
         # MARKET 1: Moneyline
         market1, market2 = st.columns(2, gap="small")
