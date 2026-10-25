@@ -222,6 +222,30 @@ div[data-testid="stNumberInput"] input {font-size:.85rem}
 .outcome-sub {font-size:.68rem;color:#91a5ba;margin-top:3px}
 .result-line {font-size:.76rem;padding:7px 9px;margin-top:4px;border-radius:7px;background:#0c241f;color:#9de8ca}
 .result-line.neutral {background:#111c28;color:#9aafc4}
+.final-score-panel {
+  border:1px solid #2c5878; border-left:5px solid #55ddb0; border-radius:12px;
+  padding:14px 18px; margin:8px 0 12px; background:linear-gradient(110deg,#10291f,#101d2c 75%);
+}
+.final-score-kicker {font-size:.72rem;letter-spacing:.12em;font-weight:900;color:#6ee7b7;margin-bottom:10px}
+.final-score-teams {display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px}
+.final-team {display:flex;align-items:center;justify-content:space-between;gap:10px;color:#dce8f4;font-weight:750}
+.final-team span {font-size:1rem}
+.final-team strong {font-size:2rem;line-height:1;color:#fff;font-weight:900}
+.final-vs {font-size:1.5rem;color:#7790a8;font-weight:800}
+.final-total {border-top:1px solid #294456;margin-top:12px;padding-top:9px;display:flex;justify-content:space-between;color:#9eb4c9;font-size:.72rem;letter-spacing:.06em;font-weight:800}
+.final-total strong {color:#fff;font-size:.95rem}
+.market-outcome {border:1px solid #2b4054;border-radius:10px;padding:12px 14px;margin:3px 0 12px;min-height:124px;background:#101c29}
+.outcome-heading {font-size:.72rem;letter-spacing:.08em;font-weight:900;color:#9ab0c6}
+.outcome-pick {font-size:.95rem;font-weight:750;color:#eef5fb;margin:7px 0}
+.outcome-result {font-size:1rem;font-weight:950;letter-spacing:.03em;padding:7px 10px;border-radius:7px;display:inline-block;margin:2px 0 7px}
+.outcome-detail {font-size:.76rem;color:#a8bacb}
+.market-outcome.won {border-color:#239b72;background:linear-gradient(130deg,#103b30,#10241f)}
+.market-outcome.won .outcome-result {color:#09291f;background:#66e0ae}
+.market-outcome.lost {border-color:#b84e59;background:linear-gradient(130deg,#401e29,#241922)}
+.market-outcome.lost .outcome-result {color:#fff;background:#c84f5b}
+.market-outcome.push {border-color:#b58a35;background:linear-gradient(130deg,#3b3018,#211f1a)}
+.market-outcome.push .outcome-result {color:#2b2109;background:#e7c36b}
+.market-outcome.pending .outcome-result {color:#d8e5f1;background:#304356}
 div[data-testid="stAlert"] {margin:.25rem 0!important}
 
 @media(max-width:900px){.block-container{padding:.65rem}.status{display:none}}
@@ -477,18 +501,56 @@ with right:
         """, unsafe_allow_html=True)
 
         if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
-            final_total = int(selected_game["home_score"]) + int(selected_game["away_score"])
-            st.success(f"RESULTADO FINAL: {home} {selected_game['home_score']}–{selected_game['away_score']} {away} · Total: {final_total} pontos")
+            final_home = int(selected_game["home_score"])
+            final_away = int(selected_game["away_score"])
+            final_total = final_home + final_away
+            st.markdown(f"""
+            <div class="final-score-panel">
+              <div class="final-score-kicker">🏁 RESULTADO FINAL</div>
+              <div class="final-score-teams">
+                <div class="final-team"><span>{home}</span><strong>{final_home}</strong></div>
+                <div class="final-vs">–</div>
+                <div class="final-team"><span>{away}</span><strong>{final_away}</strong></div>
+              </div>
+              <div class="final-total">TOTAL DE PONTOS <strong>{final_total}</strong></div>
+            </div>
+            """, unsafe_allow_html=True)
             saved_row = log_df[
                 log_df["game_id"].map(normalize_game_id) == normalize_game_id(selected_game["id"])
             ] if not log_df.empty else pd.DataFrame()
             if not saved_row.empty:
                 saved = saved_row.iloc[-1]
-                r1, r2 = st.columns(2, gap="small")
-                with r1:
-                    st.markdown(f"**Moneyline:** {saved.get('moneyline_pick', '—')} · **{saved.get('moneyline_result', 'Pendente')}**")
-                with r2:
-                    st.markdown(f"**Over/Under:** {saved.get('total_pick', '—')} · **{saved.get('total_result', 'Pendente')}** (linha {saved.get('total_line', '—')})")
+
+                def outcome_card(title, pick, result, detail=""):
+                    result_text = str(result or "Pendente")
+                    if result_text == "Acertou":
+                        css_class, icon_text = "won", "✓ ACERTOU"
+                    elif result_text == "Falhou":
+                        css_class, icon_text = "lost", "✕ FALHOU"
+                    elif result_text == "Push":
+                        css_class, icon_text = "push", "＝ PUSH"
+                    else:
+                        css_class, icon_text = "pending", "… PENDENTE"
+                    return f"""
+                    <div class="market-outcome {css_class}">
+                      <div class="outcome-heading">{title}</div>
+                      <div class="outcome-pick">{pick}</div>
+                      <div class="outcome-result">{icon_text}</div>
+                      <div class="outcome-detail">{detail}</div>
+                    </div>"""
+
+                ml_pick = str(saved.get("moneyline_pick", "—"))
+                ml_detail = f"Vencedor real: {home if final_home > final_away else away if final_away > final_home else 'Empate'}"
+                total_pick = str(saved.get("total_pick", "—"))
+                total_line_value = saved.get("total_line", "—")
+                total_detail = f"Total real: {final_total} pts · Linha: {total_line_value}"
+                outcome1 = outcome_card("MONEYLINE", f"Seleção: {ml_pick}", saved.get("moneyline_result", "Pendente"), ml_detail)
+                outcome2 = outcome_card("OVER / UNDER", f"Seleção: {total_pick}", saved.get("total_result", "Pendente"), total_detail)
+                out1, out2 = st.columns(2, gap="small")
+                with out1:
+                    st.markdown(outcome1, unsafe_allow_html=True)
+                with out2:
+                    st.markdown(outcome2, unsafe_allow_html=True)
             else:
                 st.info("O resultado final está disponível, mas não existe uma previsão congelada para este jogo. Não é possível classificar um acerto retroativamente.")
 
