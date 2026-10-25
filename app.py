@@ -10,7 +10,7 @@ st.markdown("""
 <style>
 :root { --bg:#0a1018; --panel:#111b27; --line:#26384b; --muted:#8fa4ba; --white:#f2f6fb; --blue:#68c4ff; --green:#35d49a; }
 .stApp {background:radial-gradient(ellipse at 10% 0%,rgba(27,91,133,.13),transparent 32%),var(--bg);color:var(--white)}
-.block-container {max-width:1720px;padding:2.8rem 1.1rem .8rem!important}
+.block-container {max-width:1720px;padding:2.65rem 1.1rem .9rem!important}
 header[data-testid="stHeader"] {background:#0a1018!important;height:2.45rem!important}
 header[data-testid="stHeader"] [data-testid="stToolbar"] {background:transparent!important}
 h1,h2,h3,p,label {margin-top:0}
@@ -19,7 +19,7 @@ h2 {font-size:1.05rem!important;font-weight:800!important}
 h3 {font-size:.95rem!important;font-weight:800!important}
 p,label,[data-testid="stCaptionContainer"] p {color:var(--muted)}
 hr {margin:.6rem 0!important;border-color:var(--line)!important}
-.topbar {display:flex;align-items:center;gap:11px;padding:10px 14px;margin-bottom:10px;min-height:62px;box-sizing:border-box;overflow:visible;border:1px solid #263d51;border-radius:10px;background:linear-gradient(100deg,#132638,#111b27 70%,#12251f)}
+.topbar {display:flex;align-items:center;gap:11px;padding:10px 14px;margin-bottom:11px;min-height:64px;box-sizing:border-box;overflow:visible;border:1px solid #263d51;border-radius:10px;background:linear-gradient(100deg,#132638,#111b27 70%,#12251f)}
 .ball {font-size:1.55rem;line-height:1;flex:0 0 auto}
 .brand-sub {font-size:.73rem;color:#9eb2c7;margin-top:2px;line-height:1.35}
 .status {margin-left:auto;font-size:.66rem;color:#53dca9;font-weight:800;letter-spacing:.08em;white-space:nowrap}
@@ -51,6 +51,20 @@ div[data-testid="stMetricValue"] {font-size:1.2rem!important;color:#f5f9ff!impor
 div[data-testid="stNumberInput"] input {font-size:.85rem}
 [data-testid="stVerticalBlock"] {gap:.35rem}
 [data-testid="stHorizontalBlock"] {gap:.6rem}
+.stColumn:has(.market-card) {background:linear-gradient(180deg,rgba(17,29,42,.82),rgba(12,21,31,.78));border:1px solid #26384b;border-radius:11px;padding:9px 10px 8px;box-sizing:border-box}
+.stColumn:has(.market-card) .market-card {margin-top:0;margin-bottom:7px;min-height:76px}
+.stColumn:has(.market-card) [data-testid="stMetric"] {height:100%;box-sizing:border-box}
+.stColumn:has(.market-card) label {font-size:.74rem!important}
+.edge-box {padding:9px 11px;border-radius:8px;font-size:.82rem;margin:4px 0 7px;border:1px solid #25473e;background:#0c241f;color:#9de8ca}
+.edge-box.neutral {border-color:#344454;background:#111c28;color:#b8c7d7}
+.outcome-box {padding:8px 9px;border-radius:8px;border:1px solid #285743;background:#10231f;min-height:58px;box-sizing:border-box}
+.outcome-box.under {border-color:#2a5277;background:#111f2d}
+.outcome-title {font-size:.78rem;font-weight:850;letter-spacing:.02em}
+.outcome-sub {font-size:.68rem;color:#91a5ba;margin-top:3px}
+.result-line {font-size:.76rem;padding:7px 9px;margin-top:4px;border-radius:7px;background:#0c241f;color:#9de8ca}
+.result-line.neutral {background:#111c28;color:#9aafc4}
+div[data-testid="stAlert"] {margin:.25rem 0!important}
+
 @media(max-width:900px){.block-container{padding:.65rem}.status{display:none}}
 </style>
 """, unsafe_allow_html=True)
@@ -60,7 +74,7 @@ st.markdown("""
   <div class="ball">🏀</div>
   <div><h1>NBA LAB <span style="color:#68c4ff">PRO</span></h1>
   <div class="brand-sub">Calendário e análise de mercados · espaço de trabalho compacto</div></div>
-  <div class="status">● PRE-GAME WORKSPACE</div>
+  <div class="status">● PRÉ-JOGO · NBA</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -204,9 +218,9 @@ with right:
             market_odd = st.number_input("Odd de mercado · Casa", min_value=1.01, value=1.95, step=0.05,
                                          key=f"market_odd_{selected_game['id']}")
             if market_odd > fair_home:
-                st.success(f"Edge indicativo: +{(market_odd / fair_home - 1) * 100:.1f}%")
+                st.markdown(f'<div class="edge-box">EDGE INDICATIVO <b style="float:right">+{(market_odd / fair_home - 1) * 100:.1f}%</b></div>', unsafe_allow_html=True)
             else:
-                st.info("Odd abaixo da referência teórica.")
+                st.markdown('<div class="edge-box neutral">EDGE INDICATIVO <b style="float:right">Sem vantagem aparente</b></div>', unsafe_allow_html=True)
             st.caption("Estimativa demonstrativa; não validada com dados históricos.")
 
         # MARKET 2: Total points / Over Under
@@ -224,17 +238,17 @@ with right:
                                         key=f"total_line_{selected_game['id']}")
             a, b = st.columns(2, gap="small")
             with a:
-                st.markdown('<div class="market-card" style="padding:8px;border-color:#285743"><b style="color:#73dcb5">📈 OVER</b><div class="market-desc">Mais pontos</div></div>', unsafe_allow_html=True)
+                st.markdown('<div class="outcome-box"><div class="outcome-title" style="color:#73dcb5">📈 OVER</div><div class="outcome-sub">Mais pontos</div></div>', unsafe_allow_html=True)
                 if over_line < total_reference:
-                    st.success(f"Referência +{total_reference-over_line:.1f} pts")
+                    st.markdown(f'<div class="result-line">Referência <b>+{total_reference-over_line:.1f} pts</b></div>', unsafe_allow_html=True)
                 else:
-                    st.caption("Linha acima da referência.")
+                    st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
             with b:
-                st.markdown('<div class="market-card total" style="padding:8px"><b style="color:#79caff">📉 UNDER</b><div class="market-desc">Menos pontos</div></div>', unsafe_allow_html=True)
+                st.markdown('<div class="outcome-box under"><div class="outcome-title" style="color:#79caff">📉 UNDER</div><div class="outcome-sub">Menos pontos</div></div>', unsafe_allow_html=True)
                 if over_line > total_reference:
-                    st.success(f"Referência −{over_line-total_reference:.1f} pts")
+                    st.markdown(f'<div class="result-line">Referência <b>−{over_line-total_reference:.1f} pts</b></div>', unsafe_allow_html=True)
                 else:
-                    st.caption("Linha abaixo da referência.")
+                    st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
             st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
 
-st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel compacto de análise. As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
+st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel de análise As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
