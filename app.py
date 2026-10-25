@@ -32,9 +32,10 @@ div[data-testid="stButton"] > button:hover {border-color:#68c4ff;background:#182
 div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #72f0c4,0 2px 8px rgba(0,0,0,.12)}
 div[data-testid="stDateInput"] input {background:#eaf1f8!important;color:#182331!important;border-radius:7px!important;min-height:36px}
 div[data-testid="stDateInput"] label {font-size:.75rem!important;font-weight:700!important}
-div[data-testid="stMetric"] {background:#0c1520;border:1px solid #26384b;border-radius:8px;padding:7px 9px}
+div[data-testid="stMetric"] {background:#0c1520;border:1px solid #26384b;border-radius:8px;padding:7px 9px;min-height:88px;box-sizing:border-box}
 div[data-testid="stMetricLabel"] {font-size:.72rem!important;color:#9db0c4!important}
 div[data-testid="stMetricValue"] {font-size:1.2rem!important;color:#f5f9ff!important;font-weight:850}
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] {margin-top:3px}
 .market-card {border:1px solid #285743;border-radius:8px;padding:9px 10px;background:linear-gradient(140deg,#14251f,#101923);margin-bottom:5px;min-height:78px;box-sizing:border-box}
 .market-card.total {border-color:#2a5277;background:linear-gradient(140deg,#142337,#101923)}
 .market-kicker {font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;font-weight:850;color:#73dcb5}
