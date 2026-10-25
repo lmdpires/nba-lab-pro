@@ -11,9 +11,12 @@ st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 LOG_PATH = Path(__file__).with_name("nba_prediction_log.csv")
 LOG_COLUMNS = [
     "record_id", "saved_at", "game_date", "game_id", "start_time",
-    "away_team", "home_team", "moneyline_pick", "p_home", "p_away",
-    "home_market_odds", "total_reference", "total_line", "total_pick",
-    "home_score", "away_score", "moneyline_result", "total_result"
+    "away_team", "home_team", "model_label",
+    "moneyline_pick", "p_home", "p_away", "fair_home_odds", "fair_away_odds",
+    "home_market_odds", "moneyline_edge_pct",
+    "total_reference", "total_line", "total_gap", "total_pick",
+    "home_score", "away_score", "actual_total",
+    "moneyline_result", "total_result"
 ]
 
 def load_log():
@@ -291,15 +294,21 @@ with right:
                 "start_time": selected_game["time"],
                 "away_team": away,
                 "home_team": home,
+                "model_label": "Demonstrativo — não calibrado",
                 "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
                 "p_home": round(float(p_home), 4),
                 "p_away": round(float(p_away), 4),
+                "fair_home_odds": round(float(fair_home), 3),
+                "fair_away_odds": round(float(fair_away), 3),
                 "home_market_odds": round(float(market_odd), 2),
+                "moneyline_edge_pct": round((float(market_odd) / float(fair_home) - 1) * 100, 2),
                 "total_reference": round(float(total_reference), 1),
                 "total_line": round(float(over_line), 1),
+                "total_gap": round(float(total_reference) - float(over_line), 1),
                 "total_pick": "Over" if total_reference > over_line else ("Under" if total_reference < over_line else "Sem seleção"),
                 "home_score": None,
                 "away_score": None,
+                "actual_total": None,
                 "moneyline_result": "Pendente",
                 "total_result": "Pendente"
             }
@@ -360,6 +369,7 @@ else:
                         total_result = "Acertou" if total_won else "Falhou"
                     log_df.at[idx, "home_score"] = int(home_score)
                     log_df.at[idx, "away_score"] = int(away_score)
+                    log_df.at[idx, "actual_total"] = total_score
                     log_df.at[idx, "moneyline_result"] = ml_result
                     log_df.at[idx, "total_result"] = total_result
                     save_log(log_df)
@@ -368,11 +378,52 @@ else:
     else:
         st.success("Todos os registos guardados têm resultado.")
 
+    st.markdown("### Histórico das previsões guardadas")
+    history = log_df.copy()
+    history["Prob. casa"] = pd.to_numeric(history["p_home"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
+    history["Prob. fora"] = pd.to_numeric(history["p_away"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
+    history["Odd justa casa"] = pd.to_numeric(history["fair_home_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+    history["Odd justa fora"] = pd.to_numeric(history["fair_away_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+    history["Odd mercado casa"] = pd.to_numeric(history["home_market_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+    history["Referência total"] = pd.to_numeric(history["total_reference"], errors="coerce").map(lambda x: f"{x:.1f}" if pd.notna(x) else "—")
+    history["Diferença vs linha"] = pd.to_numeric(history["total_gap"], errors="coerce").map(lambda x: f"{x:+.1f}" if pd.notna(x) else "—")
     display_cols = [
-        "game_date", "away_team", "home_team", "moneyline_pick", "total_line", "total_pick",
-        "home_score", "away_score", "moneyline_result", "total_result"
+        "game_date", "away_team", "home_team", "moneyline_pick", "Prob. casa", "Prob. fora",
+        "Odd justa casa", "Odd justa fora", "Odd mercado casa", "Referência total",
+        "total_line", "Diferença vs linha", "total_pick", "home_score", "away_score",
+        "actual_total", "moneyline_result", "total_result"
     ]
-    st.dataframe(log_df[display_cols], use_container_width=True, hide_index=True)
+    st.dataframe(
+        history[display_cols].rename(columns={
+            "game_date": "Data", "away_team": "Visitante", "home_team": "Casa",
+            "moneyline_pick": "Moneyline previsto", "total_line": "Linha mercado",
+            "total_pick": "Total previsto", "home_score": "Pontos casa",
+            "away_score": "Pontos visitante", "actual_total": "Total real",
+            "moneyline_result": "Resultado ML", "total_result": "Resultado O/U"
+        }),
+        use_container_width=True, hide_index=True
+    )
+    with st.expander("Ver fotografia completa de cada previsão"):
+        for _, row in log_df.iloc[::-1].iterrows():
+            title = f"{row['game_date']} · {row['away_team']} @ {row['home_team']} · {row['record_id']}"
+            st.markdown(f"**{title}**")
+            detail1, detail2, detail3 = st.columns(3)
+            with detail1:
+                st.write(f"Modelo: {row.get('model_label', '—')}")
+                st.write(f"Prob. casa / fora: {float(row['p_home'])*100:.1f}% / {float(row['p_away'])*100:.1f}%")
+                st.write(f"Odds justas casa / fora: {row.get('fair_home_odds', '—')} / {row.get('fair_away_odds', '—')}")
+            with detail2:
+                st.write(f"Odd mercado casa: {row.get('home_market_odds', '—')}")
+                st.write(f"Edge indicativo: {row.get('moneyline_edge_pct', '—')}%")
+                st.write(f"Escolha Moneyline: {row['moneyline_pick']}")
+            with detail3:
+                st.write(f"Total de referência: {row.get('total_reference', '—')} pts")
+                st.write(f"Linha de mercado: {row.get('total_line', '—')} pts")
+                st.write(f"Diferença referência/linha: {row.get('total_gap', '—')} pts")
+                st.write(f"Escolha total: {row['total_pick']}")
+            st.caption(f"Guardado em: {row.get('saved_at', '—')} · {row.get('model_label', 'Modelo antigo/sem etiqueta')}")
+            st.divider()
+
     finished_ml = log_df[log_df["moneyline_result"].isin(["Acertou", "Falhou"])]
     finished_total = log_df[log_df["total_result"].isin(["Acertou", "Falhou"])]
     col1, col2, col3 = st.columns(3)
