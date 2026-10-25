@@ -13,7 +13,7 @@ LOG_COLUMNS = [
     "record_id", "saved_at", "game_date", "game_id", "start_time",
     "away_team", "home_team", "model_label",
     "moneyline_pick", "p_home", "p_away", "fair_home_odds", "fair_away_odds",
-    "home_market_odds", "moneyline_edge_pct",
+    "home_market_odds", "away_market_odds", "moneyline_edge_pct", "away_moneyline_edge_pct",
     "total_reference", "total_line", "total_gap", "total_pick",
     "home_score", "away_score", "actual_total",
     "moneyline_result", "total_result"
@@ -210,7 +210,7 @@ with left:
                     )
                 with match_col:
                     st.markdown('<div class="game-button">', unsafe_allow_html=True)
-                    label = f"▸ **{game['away']} @ {game['home']}**" if is_selected else f"{game['away']} @ {game['home']}"
+                    label = f"▸ **{game['home']} vs {game['away']}**" if is_selected else f"{game['home']} vs {game['away']}"
                     if st.button(label, key=f"choose_{date_str}_{game['id']}",
                                  type="primary" if is_selected else "secondary", use_container_width=True):
                         st.session_state["nba_selected_game"] = game["id"]
@@ -226,8 +226,8 @@ with right:
         home, away = selected_game["home"], selected_game["away"]
         st.markdown(f"""
         <div class="match-header">
-          <div class="match-title">{away} <span style="color:#6c849b;font-weight:500">at</span> {home}</div>
-          <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">VISITANTE → CASA</span></div>
+          <div class="match-title">{home} <span style="color:#6c849b;font-weight:500">vs</span> {away}</div>
+          <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">CASA → VISITANTE</span></div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -247,16 +247,34 @@ with right:
             fair_home, fair_away = 1 / p_home, 1 / p_away
             a, b = st.columns(2, gap="small")
             with a:
-                st.metric("Casa", f"{p_home*100:.1f}%", f"Odd {fair_home:.2f}")
+                st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
             with b:
-                st.metric("Fora", f"{p_away*100:.1f}%", f"Odd {fair_away:.2f}")
-            market_odd = st.number_input("Odd de mercado · Casa", min_value=1.01, value=1.95, step=0.05,
-                                         key=f"market_odd_{selected_game['id']}")
-            if market_odd > fair_home:
-                st.markdown(f'<div class="edge-box">EDGE INDICATIVO <b style="float:right">+{(market_odd / fair_home - 1) * 100:.1f}%</b></div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="edge-box neutral">EDGE INDICATIVO <b style="float:right">Sem vantagem aparente</b></div>', unsafe_allow_html=True)
-            st.caption("Estimativa demonstrativa; não validada com dados históricos.")
+                st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
+            odds_home_col, odds_away_col = st.columns(2, gap="small")
+            with odds_home_col:
+                market_odd_home = st.number_input(
+                    f"Odd de mercado · Casa ({home})", min_value=1.01, value=1.95, step=0.05,
+                    key=f"market_odd_home_{selected_game['id']}"
+                )
+            with odds_away_col:
+                market_odd_away = st.number_input(
+                    f"Odd de mercado · Visitante ({away})", min_value=1.01, value=1.95, step=0.05,
+                    key=f"market_odd_away_{selected_game['id']}"
+                )
+            edge_home = (market_odd_home / fair_home - 1) * 100
+            edge_away = (market_odd_away / fair_away - 1) * 100
+            edge_col1, edge_col2 = st.columns(2, gap="small")
+            with edge_col1:
+                if edge_home > 0:
+                    st.markdown(f'<div class="edge-box">EDGE · CASA <b style="float:right">+{edge_home:.1f}%</b></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="edge-box neutral">EDGE · CASA <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
+            with edge_col2:
+                if edge_away > 0:
+                    st.markdown(f'<div class="edge-box">EDGE · VISITANTE <b style="float:right">+{edge_away:.1f}%</b></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="edge-box neutral">EDGE · VISITANTE <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
+            st.caption("Introduz cada odd no campo da equipa correspondente. Estimativas demonstrativas, não validadas com dados históricos.")
 
         # MARKET 2: Total points / Over Under
         with market2:
@@ -311,8 +329,10 @@ with right:
                 "p_away": round(float(p_away), 4),
                 "fair_home_odds": round(float(fair_home), 3),
                 "fair_away_odds": round(float(fair_away), 3),
-                "home_market_odds": round(float(market_odd), 2),
-                "moneyline_edge_pct": round((float(market_odd) / float(fair_home) - 1) * 100, 2),
+                "home_market_odds": round(float(market_odd_home), 2),
+                "away_market_odds": round(float(market_odd_away), 2),
+                "moneyline_edge_pct": round(float(edge_home), 2),
+                "away_moneyline_edge_pct": round(float(edge_away), 2),
                 "total_reference": round(float(total_reference), 1),
                 "total_line": round(float(over_line), 1),
                 "total_gap": round(float(total_reference) - float(over_line), 1),
@@ -340,7 +360,7 @@ else:
     pending = log_df[log_df["home_score"].isna() | log_df["away_score"].isna()].copy()
     if not pending.empty:
         pending["display"] = pending.apply(
-            lambda r: f"{r['game_date']} · {r['away_team']} @ {r['home_team']} · registo {r['record_id']}", axis=1
+            lambda r: f"{r['game_date']} · {r['home_team']} vs {r['away_team']} · registo {r['record_id']}", axis=1
         )
         chosen_label = st.selectbox("Jogo por avaliar", pending["display"].tolist(), key="pending_result_select")
         chosen_record = pending[pending["display"] == chosen_label].iloc[0]
@@ -396,11 +416,12 @@ else:
     history["Odd justa casa"] = pd.to_numeric(history["fair_home_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
     history["Odd justa fora"] = pd.to_numeric(history["fair_away_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
     history["Odd mercado casa"] = pd.to_numeric(history["home_market_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+    history["Odd mercado visitante"] = pd.to_numeric(history["away_market_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
     history["Referência total"] = pd.to_numeric(history["total_reference"], errors="coerce").map(lambda x: f"{x:.1f}" if pd.notna(x) else "—")
     history["Diferença vs linha"] = pd.to_numeric(history["total_gap"], errors="coerce").map(lambda x: f"{x:+.1f}" if pd.notna(x) else "—")
     display_cols = [
         "game_date", "away_team", "home_team", "moneyline_pick", "Prob. casa", "Prob. fora",
-        "Odd justa casa", "Odd justa fora", "Odd mercado casa", "Referência total",
+        "Odd justa casa", "Odd justa fora", "Odd mercado casa", "Odd mercado visitante", "Referência total",
         "total_line", "Diferença vs linha", "total_pick", "home_score", "away_score",
         "actual_total", "moneyline_result", "total_result"
     ]
@@ -416,7 +437,7 @@ else:
     )
     with st.expander("Ver fotografia completa de cada previsão"):
         for _, row in log_df.iloc[::-1].iterrows():
-            title = f"{row['game_date']} · {row['away_team']} @ {row['home_team']} · {row['record_id']}"
+            title = f"{row['game_date']} · {row['home_team']} vs {row['away_team']} · {row['record_id']}"
             st.markdown(f"**{title}**")
             detail1, detail2, detail3 = st.columns(3)
             with detail1:
@@ -425,7 +446,9 @@ else:
                 st.write(f"Odds justas casa / fora: {row.get('fair_home_odds', '—')} / {row.get('fair_away_odds', '—')}")
             with detail2:
                 st.write(f"Odd mercado casa: {row.get('home_market_odds', '—')}")
-                st.write(f"Edge indicativo: {row.get('moneyline_edge_pct', '—')}%")
+                st.write(f"Odd mercado visitante: {row.get('away_market_odds', '—')}")
+                st.write(f"Edge casa: {row.get('moneyline_edge_pct', '—')}%")
+                st.write(f"Edge visitante: {row.get('away_moneyline_edge_pct', '—')}%")
                 st.write(f"Escolha Moneyline: {row['moneyline_pick']}")
             with detail3:
                 st.write(f"Total de referência: {row.get('total_reference', '—')} pts")
