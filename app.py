@@ -10,22 +10,24 @@ st.markdown("""
 <style>
 :root { --bg:#0a1018; --panel:#111b27; --line:#26384b; --muted:#8fa4ba; --white:#f2f6fb; --blue:#68c4ff; --green:#35d49a; }
 .stApp {background:radial-gradient(ellipse at 10% 0%,rgba(27,91,133,.13),transparent 32%),var(--bg);color:var(--white)}
-.block-container {max-width:1720px;padding:1.15rem 1.1rem .8rem}
+.block-container {max-width:1720px;padding:2.8rem 1.1rem .8rem!important}
+header[data-testid="stHeader"] {background:#0a1018!important;height:2.45rem!important}
+header[data-testid="stHeader"] [data-testid="stToolbar"] {background:transparent!important}
 h1,h2,h3,p,label {margin-top:0}
-h1 {font-size:1.35rem!important;line-height:1.35!important;letter-spacing:-.03em;font-weight:850!important;margin:0!important;padding:2px 0!important;overflow:visible!important}
+h1 {font-size:1.3rem!important;line-height:1.4!important;letter-spacing:-.025em;font-weight:850!important;margin:0!important;padding:0!important;overflow:visible!important}
 h2 {font-size:1.05rem!important;font-weight:800!important}
 h3 {font-size:.95rem!important;font-weight:800!important}
 p,label,[data-testid="stCaptionContainer"] p {color:var(--muted)}
 hr {margin:.6rem 0!important;border-color:var(--line)!important}
-.topbar {display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px;min-height:66px;overflow:visible;border:1px solid #263d51;border-radius:12px;background:linear-gradient(100deg,#132638,#111b27 70%,#12251f)}
-.ball {font-size:1.65rem;line-height:1;flex:0 0 auto}
-.brand-sub {font-size:.74rem;color:#9eb2c7;margin-top:3px;line-height:1.35}
+.topbar {display:flex;align-items:center;gap:11px;padding:10px 14px;margin-bottom:10px;min-height:62px;box-sizing:border-box;overflow:visible;border:1px solid #263d51;border-radius:10px;background:linear-gradient(100deg,#132638,#111b27 70%,#12251f)}
+.ball {font-size:1.55rem;line-height:1;flex:0 0 auto}
+.brand-sub {font-size:.73rem;color:#9eb2c7;margin-top:2px;line-height:1.35}
 .status {margin-left:auto;font-size:.66rem;color:#53dca9;font-weight:800;letter-spacing:.08em;white-space:nowrap}
 .section-label {font-size:.67rem;text-transform:uppercase;letter-spacing:.12em;font-weight:850;color:#83a1bc;margin:0 0 5px}
 .left-panel,.right-panel {background:rgba(14,22,32,.7);border:1px solid #243447;border-radius:12px;padding:12px}
 .fixture-help {font-size:.72rem;color:#8fa4ba;margin-bottom:8px}
-.game-button div[data-testid="stButton"] > button {text-align:left!important;justify-content:flex-start!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:7px 8px!important;line-height:1.2!important;border-radius:7px!important;margin-bottom:2px!important;font-size:.75rem!important}
-div[data-testid="stButton"] > button {border:1px solid #2a3d51;background:#121e2b;color:#eaf2fb;font-weight:650;justify-content:flex-start!important;text-align:left!important}
+.game-button div[data-testid="stButton"] > button {text-align:left!important;justify-content:flex-start!important;white-space:normal!important;min-height:0!important;height:auto!important;padding:7px 9px!important;line-height:1.25!important;border-radius:7px!important;margin-bottom:2px!important;font-size:.76rem!important}
+div[data-testid="stButton"] > button {border:1px solid #2a3d51;background:#121e2b;color:#eaf2fb;font-weight:650;justify-content:flex-start!important;text-align:left!important;transition:background .15s,border-color .15s}
 div[data-testid="stButton"] > button:hover {border-color:#68c4ff;background:#182a3c;color:#fff}
 div[data-testid="stButton"] > button[kind="primary"] {background:#105b49;border-color:#35d49a;color:#fff}
 div[data-testid="stDateInput"] input {background:#eaf1f8!important;color:#182331!important;border-radius:7px!important;min-height:36px}
@@ -33,16 +35,18 @@ div[data-testid="stDateInput"] label {font-size:.75rem!important;font-weight:700
 div[data-testid="stMetric"] {background:#0c1520;border:1px solid #26384b;border-radius:8px;padding:7px 9px}
 div[data-testid="stMetricLabel"] {font-size:.72rem!important;color:#9db0c4!important}
 div[data-testid="stMetricValue"] {font-size:1.2rem!important;color:#f5f9ff!important;font-weight:850}
-.market-card {border:1px solid #285743;border-radius:8px;padding:9px 10px;background:linear-gradient(140deg,#14251f,#101923);margin-bottom:5px}
+.market-card {border:1px solid #285743;border-radius:8px;padding:9px 10px;background:linear-gradient(140deg,#14251f,#101923);margin-bottom:5px;min-height:78px;box-sizing:border-box}
 .market-card.total {border-color:#2a5277;background:linear-gradient(140deg,#142337,#101923)}
 .market-kicker {font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;font-weight:850;color:#73dcb5}
 .market-card.total .market-kicker {color:#79caff}
 .market-title {font-size:1rem;font-weight:850;color:#fff;margin-top:3px}
 .market-desc {font-size:.72rem;color:#91a5ba;margin-top:2px}
-.match-header {border:1px solid #2a465a;border-radius:8px;padding:9px 11px;background:#122131;margin:6px 0 8px}
+.match-header {border:1px solid #2a465a;border-radius:9px;padding:9px 12px;background:linear-gradient(110deg,#122131,#101a26);margin:6px 0 8px}
 .match-title {font-size:1rem;font-weight:850;color:#fff}
 .match-meta {font-size:.72rem;color:#9eb2c7;margin-top:3px}
-.small-note {font-size:.69rem;color:#8195a9}
+.small-note {font-size:.69rem;color:#8195a9;line-height:1.4}
+[data-testid="stAlert"] {padding:.55rem .75rem!important;border-radius:8px!important}
+[data-testid="stNumberInput"] button {background:#eaf1f8!important;color:#182331!important;border:0!important}
 .empty-state {padding:24px 14px;text-align:center;border:1px dashed #33485c;border-radius:10px;color:#9aafc4;background:#101923}
 div[data-testid="stNumberInput"] input {font-size:.85rem}
 [data-testid="stVerticalBlock"] {gap:.35rem}
@@ -146,7 +150,7 @@ with left:
         st.markdown('<div class="empty-state">Não há jogos nesta data.<br>Experimenta outro dia.</div>', unsafe_allow_html=True)
     else:
         # Compact rows; each button is one line when possible.
-        with st.container(height=470, border=False):
+        with st.container(height=455, border=False):
             for game in games:
                 is_selected = st.session_state.get("nba_selected_game") == game["id"]
                 time_col, match_col = st.columns([0.23, 0.77], gap="small", vertical_alignment="center")
@@ -233,4 +237,4 @@ with right:
                     st.caption("Linha abaixo da referência.")
             st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
 
-st.markdown('<hr><div class="small-note">NBA LAB PRO · Interface de análise compacta. As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
+st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel compacto de análise. As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
