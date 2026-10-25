@@ -71,6 +71,19 @@ def upsert_api_results(games, log_df):
     """Apply API final scores to previously frozen predictions."""
     if log_df.empty:
         return log_df, 0
+
+    # CSV inference can turn columns containing mostly blanks into float columns.
+    # Pandas 3 / NumPy then reject string assignments (e.g. result_updated_at).
+    # Normalize mutable columns to object before writing mixed text/numeric results.
+    mutable_columns = [
+        "home_score", "away_score", "actual_total", "game_status",
+        "result_updated_at", "moneyline_result", "total_result"
+    ]
+    for column in mutable_columns:
+        if column not in log_df.columns:
+            log_df[column] = None
+        log_df[column] = log_df[column].astype("object")
+
     changed = 0
     by_id = {normalize_game_id(g.get("id")): g for g in games}
     for idx, row in log_df.iterrows():
