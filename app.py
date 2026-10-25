@@ -11,11 +11,11 @@ st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 LOG_PATH = Path(__file__).with_name("nba_prediction_log.csv")
 LOG_COLUMNS = [
     "record_id", "saved_at", "game_date", "game_id", "start_time",
-    "away_team", "home_team", "model_label",
+    "freeze_at", "away_team", "home_team", "model_label", "capture_mode",
     "moneyline_pick", "p_home", "p_away", "fair_home_odds", "fair_away_odds",
     "home_market_odds", "away_market_odds", "moneyline_edge_pct", "away_moneyline_edge_pct",
     "total_reference", "total_line", "total_gap", "total_pick",
-    "home_score", "away_score", "actual_total",
+    "home_score", "away_score", "actual_total", "game_status", "result_updated_at",
     "moneyline_result", "total_result"
 ]
 
@@ -33,6 +33,117 @@ def load_log():
 
 def save_log(df):
     df.to_csv(LOG_PATH, index=False)
+
+def model_snapshot(home, away):
+    """Same transparent demo heuristics as the UI; not a trained prediction model."""
+    factor = (len(home) + len(away) * 3) % 10
+    p_home = min(0.90, max(0.10, 0.54 + factor * 0.015))
+    p_away = 1 - p_home
+    total_reference = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
+    return p_home, p_away, total_reference
+
+def evaluate_record(row, home_score, away_score):
+    """Evaluate saved Moneyline and total picks against the official final score."""
+    total_score = int(home_score) + int(away_score)
+    pick_ml = str(row.get("moneyline_pick", ""))
+    if int(home_score) == int(away_score):
+        ml_result = "Push"
+    else:
+        home_won = int(home_score) > int(away_score)
+        ml_result = "Acertou" if ((pick_ml == "Casa" and home_won) or
+                                  (pick_ml == "Fora" and not home_won)) else "Falhou"
+
+    try:
+        line = float(row.get("total_line"))
+    except (TypeError, ValueError):
+        line = None
+    pick_total = str(row.get("total_pick", ""))
+    if line is None or pick_total in ("", "Sem seleção", "nan"):
+        total_result = "Sem linha/seleção"
+    elif total_score == line:
+        total_result = "Push"
+    else:
+        won = (pick_total == "Over" and total_score > line) or (pick_total == "Under" and total_score < line)
+        total_result = "Acertou" if won else "Falhou"
+    return total_score, ml_result, total_result
+
+def upsert_api_results(games, log_df):
+    """Apply API final scores to previously frozen predictions."""
+    if log_df.empty:
+        return log_df, 0
+    changed = 0
+    by_id = {str(g.get("id")): g for g in games}
+    for idx, row in log_df.iterrows():
+        game = by_id.get(str(row.get("game_id")))
+        if not game or game.get("status") not in ("FT", "AOT", "FTOT", "FINAL"):
+            continue
+        home_score, away_score = game.get("home_score"), game.get("away_score")
+        if home_score is None or away_score is None:
+            continue
+        if str(row.get("game_status", "")) == "Final" and pd.notna(row.get("actual_total")):
+            continue
+        total_score, ml_result, total_result = evaluate_record(row, home_score, away_score)
+        log_df.at[idx, "home_score"] = int(home_score)
+        log_df.at[idx, "away_score"] = int(away_score)
+        log_df.at[idx, "actual_total"] = int(total_score)
+        log_df.at[idx, "game_status"] = "Final"
+        log_df.at[idx, "result_updated_at"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+        log_df.at[idx, "moneyline_result"] = ml_result
+        log_df.at[idx, "total_result"] = total_result
+        changed += 1
+    return log_df, changed
+
+def auto_freeze_predictions(games, log_df, now=None):
+    """Freeze a demo snapshot at T-5 when the app is running / refreshed."""
+    now = now or datetime.datetime.now().astimezone()
+    if log_df.empty:
+        existing_ids = set()
+    else:
+        existing_ids = set(log_df["game_id"].astype(str))
+    records = []
+    for game in games:
+        try:
+            kickoff = datetime.datetime.fromtimestamp(float(game["timestamp"]), tz=now.tzinfo)
+        except (KeyError, TypeError, ValueError, OSError):
+            continue
+        freeze_at = kickoff - datetime.timedelta(minutes=5)
+        if now < freeze_at or str(game["id"]) in existing_ids:
+            continue
+        if game.get("status") in ("FT", "AOT", "FTOT", "FINAL", "LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
+            # Do not create a new "pre-game" prediction once play has started.
+            continue
+        home, away = game["home"], game["away"]
+        p_home, p_away, total_reference = model_snapshot(home, away)
+        # No bookmaker odds feed is assumed here. Odds are deliberately left blank.
+        # The total line is the app's clearly labelled fallback until a market line is entered.
+        total_line = 220.5
+        records.append({
+            "record_id": str(uuid.uuid4())[:8],
+            "saved_at": now.isoformat(timespec="seconds"),
+            "game_date": kickoff.strftime("%Y-%m-%d"),
+            "game_id": str(game["id"]),
+            "start_time": kickoff.strftime("%H:%M"),
+            "freeze_at": freeze_at.isoformat(timespec="seconds"),
+            "away_team": away, "home_team": home,
+            "model_label": "Demonstrativo — não calibrado",
+            "capture_mode": "Automático T-5",
+            "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
+            "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
+            "fair_home_odds": round(1 / p_home, 3), "fair_away_odds": round(1 / p_away, 3),
+            "home_market_odds": None, "away_market_odds": None,
+            "moneyline_edge_pct": None, "away_moneyline_edge_pct": None,
+            "total_reference": round(float(total_reference), 1),
+            "total_line": total_line,
+            "total_gap": round(float(total_reference) - total_line, 1),
+            "total_pick": "Over" if total_reference > total_line else ("Under" if total_reference < total_line else "Sem seleção"),
+            "home_score": None, "away_score": None, "actual_total": None,
+            "game_status": "Pendente", "result_updated_at": None,
+            "moneyline_result": "Pendente", "total_result": "Pendente"
+        })
+        existing_ids.add(str(game["id"]))
+    if records:
+        log_df = pd.concat([log_df, pd.DataFrame(records)], ignore_index=True)
+    return log_df, len(records)
 
 # Compact, two-column workspace: fixtures on the left, both markets on the right.
 st.markdown("""
@@ -163,10 +274,25 @@ if API_KEY:
                     if not home.get("name") or not away.get("name") or not start_time:
                         continue
                     local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
+                    status_obj = item.get("status") or {}
+                    scores_obj = item.get("scores") or {}
+                    home_score = (scores_obj.get("home") or {}).get("total")
+                    away_score = (scores_obj.get("visitors") or scores_obj.get("away") or {}).get("total")
+                    try:
+                        home_score = int(home_score) if home_score is not None else None
+                    except (TypeError, ValueError):
+                        home_score = None
+                    try:
+                        away_score = int(away_score) if away_score is not None else None
+                    except (TypeError, ValueError):
+                        away_score = None
                     games.append({
                         "id": str(item.get("id", f"{home['name']}-{away['name']}-{start_time}")),
                         "home": home["name"], "away": away["name"],
-                        "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp()
+                        "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp(),
+                        "status": str(status_obj.get("short") or status_obj.get("long") or "NS").upper(),
+                        "status_long": str(status_obj.get("long") or ""),
+                        "home_score": home_score, "away_score": away_score
                     })
     except requests.RequestException as exc:
         st.error(f"Erro de ligação à API-NBA: {exc}")
@@ -181,6 +307,13 @@ for game in games:
         seen.add(key)
         deduped.append(game)
 games = deduped
+
+# Automatic prediction freeze and result reconciliation. Runs whenever the app reruns.
+log_df = load_log()
+log_df, new_snapshots = auto_freeze_predictions(games, log_df)
+log_df, updated_results = upsert_api_results(games, log_df)
+if new_snapshots or updated_results:
+    save_log(log_df)
 
 current_ids = {g["id"] for g in games}
 if st.session_state.get("nba_selection_date") != date_str:
@@ -210,7 +343,13 @@ with left:
                     )
                 with match_col:
                     st.markdown('<div class="game-button">', unsafe_allow_html=True)
-                    label = f"▸ **{game['home']} vs {game['away']}**" if is_selected else f"{game['home']} vs {game['away']}"
+                    status = game.get("status", "NS")
+                    if status in ("FT", "AOT", "FTOT", "FINAL") and game.get("home_score") is not None and game.get("away_score") is not None:
+                        label = f"{game['home']} {game['home_score']}–{game['away_score']} {game['away']} · FINAL"
+                    elif status in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
+                        label = f"🔴 {game['home']} vs {game['away']} · EM DIRETO"
+                    else:
+                        label = f"▸ **{game['home']} vs {game['away']}**" if is_selected else f"{game['home']} vs {game['away']}"
                     if st.button(label, key=f"choose_{date_str}_{game['id']}",
                                  type="primary" if is_selected else "secondary", use_container_width=True):
                         st.session_state["nba_selected_game"] = game["id"]
@@ -224,10 +363,17 @@ with right:
         st.markdown('<div class="empty-state">Escolhe um jogo na lista à esquerda.<br>Os dois mercados aparecem aqui, lado a lado.</div>', unsafe_allow_html=True)
     else:
         home, away = selected_game["home"], selected_game["away"]
+        status_code = selected_game.get("status", "NS")
+        if status_code in ("FT", "AOT", "FTOT", "FINAL") and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
+            status_label = f"FINAL · {selected_game['home_score']}–{selected_game['away_score']}"
+        elif status_code in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
+            status_label = "EM DIRETO"
+        else:
+            status_label = "PRÉ-JOGO"
         st.markdown(f"""
         <div class="match-header">
           <div class="match-title">{home} <span style="color:#6c849b;font-weight:500">vs</span> {away}</div>
-          <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">CASA → VISITANTE</span></div>
+          <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">CASA → VISITANTE</span> &nbsp; · &nbsp; <b>{status_label}</b></div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -307,171 +453,55 @@ with right:
                     st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
             st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
 
-        with st.container(key="save_prediction_area"):
-            st.markdown("### Guardar previsão")
-            st.caption("Regista os valores atuais antes do jogo para os avaliar depois.")
-            save_clicked = st.button(
-                "▣  Guardar previsão",
-                key=f"save_prediction_{selected_game['id']}",
-                type="primary",
-                use_container_width=True
-            )
-        if save_clicked:
-            log_df = load_log()
-            record = {
-                "record_id": str(uuid.uuid4())[:8],
-                "saved_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-                "game_date": selected_date.strftime("%Y-%m-%d"),
-                "game_id": selected_game["id"],
-                "start_time": selected_game["time"],
-                "away_team": away,
-                "home_team": home,
-                "model_label": "Demonstrativo — não calibrado",
-                "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
-                "p_home": round(float(p_home), 4),
-                "p_away": round(float(p_away), 4),
-                "fair_home_odds": round(float(fair_home), 3),
-                "fair_away_odds": round(float(fair_away), 3),
-                "home_market_odds": round(float(market_odd_home), 2),
-                "away_market_odds": round(float(market_odd_away), 2),
-                "moneyline_edge_pct": round(float(edge_home), 2),
-                "away_moneyline_edge_pct": round(float(edge_away), 2),
-                "total_reference": round(float(total_reference), 1),
-                "total_line": round(float(over_line), 1),
-                "total_gap": round(float(total_reference) - float(over_line), 1),
-                "total_pick": "Over" if total_reference > over_line else ("Under" if total_reference < over_line else "Sem seleção"),
-                "home_score": None,
-                "away_score": None,
-                "actual_total": None,
-                "moneyline_result": "Pendente",
-                "total_result": "Pendente"
-            }
-            log_df = pd.concat([log_df, pd.DataFrame([record])], ignore_index=True)
-            save_log(log_df)
-            st.success("Previsão guardada. Regista o resultado final quando o jogo terminar.")
+        st.info("A previsão é congelada automaticamente quando a aplicação está ativa/é atualizada a partir dos 5 minutos antes do início. As odds de bookmaker ainda não são fornecidas automaticamente nesta versão.")
 
 st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel de análise As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
 
 
-st.markdown("## Registo de previsões e resultados")
-st.caption("Guarda a previsão antes do jogo e regista o resultado final para medir a taxa de acerto.")
+st.markdown("## Resultados e avaliação automática")
+st.caption("Os resultados finais vêm da API-Sports NBA. As previsões são congeladas automaticamente a partir de T−5 quando a aplicação executa uma atualização.")
 
 log_df = load_log()
 if log_df.empty:
-    st.info("Ainda não há previsões guardadas. Seleciona um jogo e utiliza «Guardar previsão para avaliação».")
+    st.info("Ainda não existem previsões congeladas. Mantém a aplicação aberta ou atualiza-a perto do início dos jogos.")
 else:
-    pending = log_df[log_df["home_score"].isna() | log_df["away_score"].isna()].copy()
-    if not pending.empty:
-        pending["display"] = pending.apply(
-            lambda r: f"{r['game_date']} · {r['home_team']} vs {r['away_team']} · registo {r['record_id']}", axis=1
-        )
-        chosen_label = st.selectbox("Jogo por avaliar", pending["display"].tolist(), key="pending_result_select")
-        chosen_record = pending[pending["display"] == chosen_label].iloc[0]
-        result_col1, result_col2, result_col3 = st.columns([1, 1, 1.4], gap="small")
-        with result_col1:
-            home_score = st.number_input(
-                f"Pontos {chosen_record['home_team']} (casa)", min_value=0, max_value=200, value=0, step=1,
-                key=f"home_score_{chosen_record['record_id']}"
-            )
-        with result_col2:
-            away_score = st.number_input(
-                f"Pontos {chosen_record['away_team']} (fora)", min_value=0, max_value=200, value=0, step=1,
-                key=f"away_score_{chosen_record['record_id']}"
-            )
-        with result_col3:
-            st.write("")
-            st.write("")
-            if st.button("Registar resultado final", key=f"submit_result_{chosen_record['record_id']}", use_container_width=True):
-                if home_score == 0 and away_score == 0:
-                    st.error("Confirma os pontos antes de guardar o resultado.")
-                else:
-                    idx = log_df.index[log_df["record_id"].astype(str) == str(chosen_record["record_id"])][0]
-                    total_score = int(home_score + away_score)
-                    pick_ml = str(log_df.at[idx, "moneyline_pick"])
-                    pick_total = str(log_df.at[idx, "total_pick"])
-                    if home_score == away_score:
-                        ml_result = "Empate — verificar resultado"
-                    else:
-                        home_won = home_score > away_score
-                        away_won = away_score > home_score
-                        ml_result = "Acertou" if ((pick_ml == "Casa" and home_won) or (pick_ml == "Fora" and away_won)) else "Falhou"
-                    line = float(log_df.at[idx, "total_line"])
-                    if pick_total == "Sem seleção" or total_score == line:
-                        total_result = "Push/sem seleção"
-                    else:
-                        total_won = (pick_total == "Over" and total_score > line) or (pick_total == "Under" and total_score < line)
-                        total_result = "Acertou" if total_won else "Falhou"
-                    log_df.at[idx, "home_score"] = int(home_score)
-                    log_df.at[idx, "away_score"] = int(away_score)
-                    log_df.at[idx, "actual_total"] = total_score
-                    log_df.at[idx, "moneyline_result"] = ml_result
-                    log_df.at[idx, "total_result"] = total_result
-                    save_log(log_df)
-                    st.success(f"Resultado registado · Moneyline: {ml_result} · Total: {total_result}")
-                    st.rerun()
-    else:
-        st.success("Todos os registos guardados têm resultado.")
+    finished_ml = log_df[log_df["moneyline_result"].isin(["Acertou", "Falhou"])]
+    finished_total = log_df[log_df["total_result"].isin(["Acertou", "Falhou"])]
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        rate = (finished_ml["moneyline_result"] == "Acertou").mean() * 100 if not finished_ml.empty else 0
+        st.metric("Acerto Moneyline", f"{rate:.1f}%", f"{len(finished_ml)} avaliados")
+    with c2:
+        rate = (finished_total["total_result"] == "Acertou").mean() * 100 if not finished_total.empty else 0
+        st.metric("Acerto Over/Under", f"{rate:.1f}%", f"{len(finished_total)} avaliados")
+    with c3:
+        st.metric("Previsões congeladas", int(len(log_df)))
+    with c4:
+        st.metric("Resultados finais", int(log_df["game_status"].eq("Final").sum()))
 
-    st.markdown("### Histórico das previsões guardadas")
     history = log_df.copy()
+    history["Resultado"] = history.apply(
+        lambda r: f"{int(r['home_score'])}–{int(r['away_score'])}" if pd.notna(r.get("home_score")) and pd.notna(r.get("away_score")) else "—",
+        axis=1
+    )
+    history["Total real"] = pd.to_numeric(history["actual_total"], errors="coerce")
+    history["Linha"] = pd.to_numeric(history["total_line"], errors="coerce")
     history["Prob. casa"] = pd.to_numeric(history["p_home"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
-    history["Prob. fora"] = pd.to_numeric(history["p_away"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
-    history["Odd justa casa"] = pd.to_numeric(history["fair_home_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
-    history["Odd justa fora"] = pd.to_numeric(history["fair_away_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
-    history["Odd mercado casa"] = pd.to_numeric(history["home_market_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
-    history["Odd mercado visitante"] = pd.to_numeric(history["away_market_odds"], errors="coerce").map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
-    history["Referência total"] = pd.to_numeric(history["total_reference"], errors="coerce").map(lambda x: f"{x:.1f}" if pd.notna(x) else "—")
-    history["Diferença vs linha"] = pd.to_numeric(history["total_gap"], errors="coerce").map(lambda x: f"{x:+.1f}" if pd.notna(x) else "—")
+    history["Prob. visitante"] = pd.to_numeric(history["p_away"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
     display_cols = [
-        "game_date", "away_team", "home_team", "moneyline_pick", "Prob. casa", "Prob. fora",
-        "Odd justa casa", "Odd justa fora", "Odd mercado casa", "Odd mercado visitante", "Referência total",
-        "total_line", "Diferença vs linha", "total_pick", "home_score", "away_score",
-        "actual_total", "moneyline_result", "total_result"
+        "game_date", "home_team", "away_team", "Resultado",
+        "moneyline_pick", "moneyline_result", "Prob. casa", "Prob. visitante",
+        "total_reference", "Linha", "total_pick", "Total real", "total_result", "capture_mode"
     ]
     st.dataframe(
         history[display_cols].rename(columns={
-            "game_date": "Data", "away_team": "Visitante", "home_team": "Casa",
-            "moneyline_pick": "Moneyline previsto", "total_line": "Linha mercado",
-            "total_pick": "Total previsto", "home_score": "Pontos casa",
-            "away_score": "Pontos visitante", "actual_total": "Total real",
-            "moneyline_result": "Resultado ML", "total_result": "Resultado O/U"
+            "game_date": "Data", "home_team": "Casa", "away_team": "Visitante",
+            "moneyline_pick": "Moneyline previsto", "moneyline_result": "Moneyline",
+            "total_reference": "Total referência", "total_pick": "Over/Under previsto",
+            "total_result": "Over/Under", "capture_mode": "Registo"
         }),
         use_container_width=True, hide_index=True
     )
-    with st.expander("Ver fotografia completa de cada previsão"):
-        for _, row in log_df.iloc[::-1].iterrows():
-            title = f"{row['game_date']} · {row['home_team']} vs {row['away_team']} · {row['record_id']}"
-            st.markdown(f"**{title}**")
-            detail1, detail2, detail3 = st.columns(3)
-            with detail1:
-                st.write(f"Modelo: {row.get('model_label', '—')}")
-                st.write(f"Prob. casa / fora: {float(row['p_home'])*100:.1f}% / {float(row['p_away'])*100:.1f}%")
-                st.write(f"Odds justas casa / fora: {row.get('fair_home_odds', '—')} / {row.get('fair_away_odds', '—')}")
-            with detail2:
-                st.write(f"Odd mercado casa: {row.get('home_market_odds', '—')}")
-                st.write(f"Odd mercado visitante: {row.get('away_market_odds', '—')}")
-                st.write(f"Edge casa: {row.get('moneyline_edge_pct', '—')}%")
-                st.write(f"Edge visitante: {row.get('away_moneyline_edge_pct', '—')}%")
-                st.write(f"Escolha Moneyline: {row['moneyline_pick']}")
-            with detail3:
-                st.write(f"Total de referência: {row.get('total_reference', '—')} pts")
-                st.write(f"Linha de mercado: {row.get('total_line', '—')} pts")
-                st.write(f"Diferença referência/linha: {row.get('total_gap', '—')} pts")
-                st.write(f"Escolha total: {row['total_pick']}")
-            st.caption(f"Guardado em: {row.get('saved_at', '—')} · {row.get('model_label', 'Modelo antigo/sem etiqueta')}")
-            st.divider()
-
-    finished_ml = log_df[log_df["moneyline_result"].isin(["Acertou", "Falhou"])]
-    finished_total = log_df[log_df["total_result"].isin(["Acertou", "Falhou"])]
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        rate = (finished_ml["moneyline_result"] == "Acertou").mean() * 100 if not finished_ml.empty else 0
-        st.metric("Acerto Moneyline", f"{rate:.1f}%", f"{len(finished_ml)} jogos avaliados")
-    with col2:
-        rate = (finished_total["total_result"] == "Acertou").mean() * 100 if not finished_total.empty else 0
-        st.metric("Acerto Over/Under", f"{rate:.1f}%", f"{len(finished_total)} jogos avaliados")
-    with col3:
-        st.metric("Previsões guardadas", int(len(log_df)))
     st.download_button(
         "Descarregar backup CSV",
         data=log_df.to_csv(index=False).encode("utf-8-sig"),
@@ -479,4 +509,4 @@ else:
         mime="text/csv",
         use_container_width=True
     )
-    st.warning("O histórico fica num CSV no ambiente da aplicação. Na Streamlit Cloud, descarrega backups regularmente: ficheiros locais podem não sobreviver a reinícios ou novas implementações.")
+    st.warning("Limitação importante: o registo automático só acontece quando o Streamlit executa uma atualização. Para garantir o congelamento exato em T−5, é necessário um agendador externo ou manter uma atualização periódica ativa. A linha total usada automaticamente é uma referência demonstrativa de 220,5, não uma linha de bookmaker. As odds de mercado ficam vazias nesta versão.")
