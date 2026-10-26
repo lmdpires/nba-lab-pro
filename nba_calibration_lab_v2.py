@@ -171,7 +171,8 @@ if GAMES_PATH.exists():
         if not status or status in {'NAN', 'NONE', 'NULL'}:
             return False
         compact = ''.join(ch for ch in status if ch.isalnum())
-        exact_codes = {'FT', 'AOT', 'AP', 'FINAL', 'FINISHED', 'COMPLETED', 'ENDED'}
+        # API-Sports NBA numeric status codes: 1=Not Started, 2=Live, 3=Finished, 4=Postponed, 5=Delayed, 6=Canceled.
+        exact_codes = {'3', 'FT', 'AOT', 'AP', 'FINAL', 'FINISHED', 'COMPLETED', 'ENDED'}
         if compact in exact_codes:
             return True
         final_phrases = ('FINISHED', 'FINAL', 'COMPLETED', 'AFTER OVERTIME',
