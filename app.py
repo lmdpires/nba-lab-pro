@@ -9,6 +9,7 @@ st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 
 # Registo CSV local; descarregar backups regularmente se a app estiver na Streamlit Cloud.
 LOG_PATH = Path(__file__).with_name("nba_prediction_log.csv")
+MARKET_DRAFT_PATH = Path(__file__).with_name("nba_market_inputs.csv")
 LOG_COLUMNS = [
     "record_id", "saved_at", "game_date", "game_id", "start_time",
     "freeze_at", "away_team", "home_team", "model_label", "capture_mode",
@@ -33,6 +34,52 @@ def load_log():
 
 def save_log(df):
     df.to_csv(LOG_PATH, index=False)
+
+def normalize_game_id(value):
+    if value is None:
+        return ""
+    try:
+        number = float(value)
+        if number.is_integer():
+            return str(int(number))
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+def load_market_drafts():
+    """Load the latest user-entered odds and total line for each game."""
+    if not MARKET_DRAFT_PATH.exists():
+        return {}
+    try:
+        df = pd.read_csv(MARKET_DRAFT_PATH)
+        drafts = {}
+        for _, row in df.iterrows():
+            drafts[normalize_game_id(row.get("game_id"))] = {
+                "home_market_odds": pd.to_numeric(row.get("home_market_odds"), errors="coerce"),
+                "away_market_odds": pd.to_numeric(row.get("away_market_odds"), errors="coerce"),
+                "total_line": pd.to_numeric(row.get("total_line"), errors="coerce"),
+                "updated_at": row.get("updated_at", "")
+            }
+        return drafts
+    except Exception:
+        return {}
+
+def save_market_draft(game_id, home_odd, away_odd, total_line):
+    """Persist the current inputs immediately on every Streamlit rerun."""
+    key = normalize_game_id(game_id)
+    drafts = load_market_drafts()
+    drafts[key] = {
+        "home_market_odds": float(home_odd),
+        "away_market_odds": float(away_odd),
+        "total_line": float(total_line),
+        "updated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    }
+    rows = []
+    for gid, values in drafts.items():
+        rows.append({"game_id": gid, **values})
+    pd.DataFrame(rows, columns=[
+        "game_id", "home_market_odds", "away_market_odds", "total_line", "updated_at"
+    ]).to_csv(MARKET_DRAFT_PATH, index=False)
 
 def model_snapshot(home, away):
     """Same transparent demo heuristics as the UI; not a trained prediction model."""
@@ -317,17 +364,6 @@ def normalize_score(value):
     except (TypeError, ValueError):
         return None
 
-def normalize_game_id(value):
-    if value is None:
-        return ""
-    try:
-        number = float(value)
-        if number.is_integer():
-            return str(int(number))
-    except (TypeError, ValueError):
-        pass
-    return str(value).strip()
-
 # Load fixtures for the chosen date.
 games = []
 if API_KEY:
@@ -403,6 +439,7 @@ def parse_api_game(item):
 
 # Load the persistent prediction history and fetch any past dates that still need results.
 log_df = load_log()
+market_drafts = load_market_drafts()
 result_games_by_id = {str(g["id"]): g for g in games}
 if API_KEY and not log_df.empty:
     unresolved_dates = sorted({
@@ -434,6 +471,26 @@ if API_KEY and not log_df.empty:
 
 # Automatic prediction freeze and result reconciliation. Runs whenever the app reruns.
 log_df, new_snapshots = auto_freeze_predictions(games, log_df)
+# Enrich newly frozen snapshots with odds/line previously entered for that game.
+if new_snapshots and not log_df.empty:
+    for idx, row in log_df.tail(new_snapshots).iterrows():
+        draft = market_drafts.get(normalize_game_id(row.get("game_id")), {})
+        if draft:
+            for source_key, target_key in [
+                ("home_market_odds", "home_market_odds"),
+                ("away_market_odds", "away_market_odds"),
+                ("total_line", "total_line")
+            ]:
+                value = draft.get(source_key)
+                if pd.notna(value):
+                    log_df.at[idx, target_key] = float(value)
+            try:
+                line = float(log_df.at[idx, "total_line"])
+                reference = float(log_df.at[idx, "total_reference"])
+                log_df.at[idx, "total_gap"] = round(reference - line, 1)
+                log_df.at[idx, "total_pick"] = "Over" if reference > line else ("Under" if reference < line else "Sem seleção")
+            except (TypeError, ValueError):
+                pass
 log_df, updated_results = upsert_api_results(list(result_games_by_id.values()), log_df)
 if new_snapshots or updated_results:
     save_log(log_df)
@@ -573,17 +630,22 @@ with right:
                 st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
             with b:
                 st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
+            # Load saved values per game so inputs survive page reloads and redeploys.
+            draft_for_game = load_market_drafts().get(normalize_game_id(selected_game["id"]), {})
+            default_home_odd = float(draft_for_game.get("home_market_odds", 1.95)) if pd.notna(draft_for_game.get("home_market_odds", 1.95)) else 1.95
+            default_away_odd = float(draft_for_game.get("away_market_odds", 1.95)) if pd.notna(draft_for_game.get("away_market_odds", 1.95)) else 1.95
+            default_total_line = float(draft_for_game.get("total_line", 220.5)) if pd.notna(draft_for_game.get("total_line", 220.5)) else 220.5
             # Use native Streamlit labels so both inputs align and never overlap.
             odds_home_col, odds_away_col = st.columns(2, gap="small")
             with odds_home_col:
                 market_odd_home = st.number_input(
-                    "Odd Casa", min_value=1.01, value=1.95, step=0.05,
+                    "Odd Casa", min_value=1.01, value=default_home_odd, step=0.05,
                     help=f"Odd de mercado para {home}",
                     key=f"market_odd_home_{selected_game['id']}"
                 )
             with odds_away_col:
                 market_odd_away = st.number_input(
-                    "Odd Visitante", min_value=1.01, value=1.95, step=0.05,
+                    "Odd Visitante", min_value=1.01, value=default_away_odd, step=0.05,
                     help=f"Odd de mercado para {away}",
                     key=f"market_odd_away_{selected_game['id']}"
                 )
@@ -613,7 +675,7 @@ with right:
             """, unsafe_allow_html=True)
             total_reference = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
             st.metric("Total de referência", f"{total_reference:.1f} pts")
-            over_line = st.number_input("Linha de mercado", min_value=150.0, max_value=300.0, value=220.5, step=0.5,
+            over_line = st.number_input("Linha de mercado", min_value=150.0, max_value=300.0, value=default_total_line, step=0.5,
                                         key=f"total_line_{selected_game['id']}")
             a, b = st.columns(2, gap="small")
             with a:
@@ -630,7 +692,11 @@ with right:
                     st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
             st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
 
-        st.info("A previsão é congelada automaticamente quando a aplicação está ativa/é atualizada a partir dos 5 minutos antes do início. As odds de bookmaker ainda não são fornecidas automaticamente nesta versão.")
+        # Persist the values every time Streamlit reruns after an input change.
+        save_market_draft(selected_game["id"], market_odd_home, market_odd_away, over_line)
+
+        st.info("As odds e a linha de mercado são guardadas automaticamente quando alteras os campos. A previsão estatística é congelada separadamente a T−5 quando a aplicação executa uma atualização.")
+
 
 st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel de análise As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
 
