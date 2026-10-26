@@ -4,6 +4,7 @@ from pathlib import Path
 import requests
 import pandas as pd
 import streamlit as st
+from nba_over_model import predict_total_and_over_prob
 
 st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 
@@ -81,12 +82,14 @@ def save_market_draft(game_id, home_odd, away_odd, total_line):
         "game_id", "home_market_odds", "away_market_odds", "total_line", "updated_at"
     ]).to_csv(MARKET_DRAFT_PATH, index=False)
 
-def model_snapshot(home, away):
-    """Same transparent demo heuristics as the UI; not a trained prediction model."""
+def model_snapshot(home, away, kickoff=None):
+    """Moneyline remains demo-only; total uses Ridge, falling back to current averages."""
     factor = (len(home) + len(away) * 3) % 10
     p_home = min(0.90, max(0.10, 0.54 + factor * 0.015))
     p_away = 1 - p_home
-    total_reference = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
+    old_average = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
+    ridge_total, _, _ = predict_total_and_over_prob(home, away, kickoff=kickoff, line=220.5)
+    total_reference = ridge_total if ridge_total is not None else old_average
     return p_home, p_away, total_reference
 
 def evaluate_record(row, home_score, away_score):
@@ -138,7 +141,7 @@ def recover_predictions_from_saved_drafts(games, log_df, drafts, now=None):
         if draft_time.to_pydatetime() >= kickoff or now < kickoff - datetime.timedelta(minutes=5):
             continue
         home, away = game["home"], game["away"]
-        p_home, p_away, total_reference = model_snapshot(home, away)
+        p_home, p_away, total_reference = model_snapshot(home, away, kickoff=kickoff)
         try:
             total_line = float(draft.get("total_line", 220.5))
             home_odd = float(draft.get("home_market_odds"))
@@ -153,7 +156,7 @@ def recover_predictions_from_saved_drafts(games, log_df, drafts, now=None):
             "start_time": kickoff.strftime("%H:%M"),
             "freeze_at": (kickoff - datetime.timedelta(minutes=5)).isoformat(timespec="seconds"),
             "away_team": away, "home_team": home,
-            "model_label": "Demonstrativo — não calibrado",
+            "model_label": "Moneyline demonstrativo; total Ridge quando disponível",
             "capture_mode": "Recuperado de inputs pré-jogo",
             "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
             "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
@@ -234,7 +237,7 @@ def auto_freeze_predictions(games, log_df, now=None):
             # Do not create a new "pre-game" prediction once play has started.
             continue
         home, away = game["home"], game["away"]
-        p_home, p_away, total_reference = model_snapshot(home, away)
+        p_home, p_away, total_reference = model_snapshot(home, away, kickoff=kickoff)
         # No bookmaker odds feed is assumed here. Odds are deliberately left blank.
         # The total line is the app's clearly labelled fallback until a market line is entered.
         total_line = 220.5
@@ -246,7 +249,7 @@ def auto_freeze_predictions(games, log_df, now=None):
             "start_time": kickoff.strftime("%H:%M"),
             "freeze_at": freeze_at.isoformat(timespec="seconds"),
             "away_team": away, "home_team": home,
-            "model_label": "Demonstrativo — não calibrado",
+            "model_label": "Moneyline demonstrativo; total Ridge quando disponível",
             "capture_mode": "Automático T-5",
             "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
             "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
@@ -737,24 +740,51 @@ with right:
               <div class="market-desc">Referência total de pontos vs linha do mercado.</div>
             </div>
             """, unsafe_allow_html=True)
-            total_reference = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
-            st.metric("Total de referência", f"{total_reference:.1f} pts")
-            over_line = st.number_input("Linha de mercado", min_value=150.0, max_value=300.0, value=default_total_line, step=0.5,
-                                        key=f"total_line_{selected_game['id']}")
+            old_average = MEDIAS_REAIS.get(home, 114.5) + MEDIAS_REAIS.get(away, 112.2)
+            over_line = st.number_input(
+                "Linha de mercado", min_value=150.0, max_value=300.0,
+                value=default_total_line, step=0.5,
+                key=f"total_line_{selected_game['id']}"
+            )
+            kickoff_utc = pd.to_datetime(selected_game["timestamp"], unit="s", utc=True)
+            ridge_total, p_over, ridge_error = predict_total_and_over_prob(
+                home, away, kickoff=kickoff_utc, line=over_line
+            )
+            if ridge_total is None:
+                total_reference = old_average
+                st.warning(f"Ridge indisponível; a mostrar a média atual. {ridge_error or ''}")
+                st.metric("Total atual (média)", f"{old_average:.1f} pts")
+            else:
+                total_reference = ridge_total
+                st.metric("Total previsto — Ridge", f"{ridge_total:.1f} pts")
+                delta = ridge_total - old_average
+                st.markdown(
+                    f'<div class="small-note" style="font-size:.72rem;margin-top:-5px;margin-bottom:7px">'
+                    f'Média atual: {old_average:.1f} pts · Diferença Ridge vs. média: {delta:+.1f} pts</div>',
+                    unsafe_allow_html=True
+                )
+                if p_over is not None:
+                    prob_col, fair_col = st.columns(2, gap="small")
+                    with prob_col:
+                        st.metric("Probabilidade Over", f"{p_over*100:.1f}%")
+                    with fair_col:
+                        st.metric("Odd justa estimada", f"{(1 / p_over):.2f}" if p_over > 0 else "—")
+                else:
+                    st.caption("Probabilidade Over indisponível para este jogo.")
             a, b = st.columns(2, gap="small")
             with a:
                 st.markdown('<div class="outcome-box"><div class="outcome-title" style="color:#73dcb5">📈 OVER</div><div class="outcome-sub">Mais pontos</div></div>', unsafe_allow_html=True)
                 if over_line < total_reference:
-                    st.markdown(f'<div class="result-line">Referência <b>+{total_reference-over_line:.1f} pts</b></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="result-line">Ridge +<b>{total_reference-over_line:.1f} pts</b> face à linha</div>', unsafe_allow_html=True)
                 else:
-                    st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="result-line neutral">Ridge não indica margem para Over</div>', unsafe_allow_html=True)
             with b:
                 st.markdown('<div class="outcome-box under"><div class="outcome-title" style="color:#79caff">📉 UNDER</div><div class="outcome-sub">Menos pontos</div></div>', unsafe_allow_html=True)
                 if over_line > total_reference:
-                    st.markdown(f'<div class="result-line">Referência <b>−{over_line-total_reference:.1f} pts</b></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="result-line">Ridge −<b>{over_line-total_reference:.1f} pts</b> face à linha</div>', unsafe_allow_html=True)
                 else:
-                    st.markdown('<div class="result-line neutral">Sem vantagem pela referência</div>', unsafe_allow_html=True)
-            st.caption("Médias fixas por equipa; não é uma previsão calibrada.")
+                    st.markdown('<div class="result-line neutral">Ridge não indica margem para Under</div>', unsafe_allow_html=True)
+            st.caption("Ridge treinado com o histórico disponível; probabilidade estimada por resíduos de validação cronológica. A média atual fica abaixo para comparação. Não é garantia de vantagem.")
 
         # Persist the values every time Streamlit reruns after an input change.
         save_market_draft(selected_game["id"], market_odd_home, market_odd_away, over_line)
@@ -762,7 +792,7 @@ with right:
         st.info("As odds e a linha de mercado são guardadas automaticamente quando alteras os campos. A previsão estatística é congelada separadamente a T−5 quando a aplicação executa uma atualização.")
 
 
-st.markdown('<hr><div class="small-note">NBA LAB PRO · Painel de análise As previsões atuais são demonstrativas e não resultam de um modelo estatístico treinado. Validar com dados históricos, odds e testes fora da amostra antes de decisões reais.</div>', unsafe_allow_html=True)
+st.markdown('<hr><div class="small-note">NBA LAB PRO · Moneyline continua demonstrativo. O total de pontos usa Ridge quando o modelo e o histórico estão disponíveis; comparar previsões com resultados reais antes de qualquer utilização prática.</div>', unsafe_allow_html=True)
 
 
 st.markdown("## Resultados e avaliação automática")
