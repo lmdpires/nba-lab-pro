@@ -114,6 +114,67 @@ def evaluate_record(row, home_score, away_score):
         total_result = "Acertou" if won else "Falhou"
     return total_score, ml_result, total_result
 
+def recover_predictions_from_saved_drafts(games, log_df, drafts, now=None):
+    """Recover a prediction from pre-game saved inputs if T-5 capture was missed."""
+    now = now or datetime.datetime.now().astimezone()
+    existing_ids = set(log_df["game_id"].map(normalize_game_id)) if not log_df.empty else set()
+    recovered = []
+    for game in games:
+        gid = normalize_game_id(game.get("id"))
+        if not gid or gid in existing_ids:
+            continue
+        draft = drafts.get(gid)
+        if not draft:
+            continue
+        try:
+            kickoff = datetime.datetime.fromtimestamp(float(game["timestamp"]), tz=now.tzinfo)
+            draft_time = pd.to_datetime(draft.get("updated_at"), utc=True, errors="coerce")
+            if pd.isna(draft_time):
+                continue
+            draft_time = draft_time.tz_convert(now.tzinfo)
+        except (KeyError, TypeError, ValueError, OSError):
+            continue
+        # Only use inputs saved before kickoff; never create a pre-game record from post-game edits.
+        if draft_time.to_pydatetime() >= kickoff or now < kickoff - datetime.timedelta(minutes=5):
+            continue
+        home, away = game["home"], game["away"]
+        p_home, p_away, total_reference = model_snapshot(home, away)
+        try:
+            total_line = float(draft.get("total_line", 220.5))
+            home_odd = float(draft.get("home_market_odds"))
+            away_odd = float(draft.get("away_market_odds"))
+        except (TypeError, ValueError):
+            continue
+        record = {
+            "record_id": str(uuid.uuid4())[:8],
+            "saved_at": draft_time.isoformat(timespec="seconds"),
+            "game_date": kickoff.strftime("%Y-%m-%d"),
+            "game_id": gid,
+            "start_time": kickoff.strftime("%H:%M"),
+            "freeze_at": (kickoff - datetime.timedelta(minutes=5)).isoformat(timespec="seconds"),
+            "away_team": away, "home_team": home,
+            "model_label": "Demonstrativo — não calibrado",
+            "capture_mode": "Recuperado de inputs pré-jogo",
+            "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
+            "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
+            "fair_home_odds": round(1 / p_home, 3), "fair_away_odds": round(1 / p_away, 3),
+            "home_market_odds": home_odd, "away_market_odds": away_odd,
+            "moneyline_edge_pct": round((home_odd / (1 / p_home) - 1) * 100, 2),
+            "away_moneyline_edge_pct": round((away_odd / (1 / p_away) - 1) * 100, 2),
+            "total_reference": round(float(total_reference), 1),
+            "total_line": total_line,
+            "total_gap": round(float(total_reference) - total_line, 1),
+            "total_pick": "Over" if total_reference > total_line else ("Under" if total_reference < total_line else "Sem seleção"),
+            "home_score": None, "away_score": None, "actual_total": None,
+            "game_status": "Pendente", "result_updated_at": None,
+            "moneyline_result": "Pendente", "total_result": "Pendente"
+        }
+        recovered.append(record)
+        existing_ids.add(gid)
+    if recovered:
+        log_df = pd.concat([log_df, pd.DataFrame(recovered)], ignore_index=True)
+    return log_df, len(recovered)
+
 def upsert_api_results(games, log_df):
     """Apply API final scores to previously frozen predictions."""
     if log_df.empty:
@@ -491,8 +552,11 @@ if new_snapshots and not log_df.empty:
                 log_df.at[idx, "total_pick"] = "Over" if reference > line else ("Under" if reference < line else "Sem seleção")
             except (TypeError, ValueError):
                 pass
+log_df, recovered_snapshots = recover_predictions_from_saved_drafts(
+    list(result_games_by_id.values()), log_df, market_drafts
+)
 log_df, updated_results = upsert_api_results(list(result_games_by_id.values()), log_df)
-if new_snapshots or updated_results:
+if new_snapshots or recovered_snapshots or updated_results:
     save_log(log_df)
 
 current_ids = {g["id"] for g in games}
