@@ -10,15 +10,15 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import brier_score_loss, log_loss, accuracy_score, mean_absolute_error, mean_squared_error
 
-st.set_page_config(page_title='NBA OVER LAB V3', page_icon='🏀', layout='wide')
-st.title('🏀 NBA LAB PRO — NBA OVER LAB V3')
-st.caption('Laboratório dedicado à previsão de pontos totais e à validação cronológica de mercados Over/Under. Aplicação separada da app principal e das Calibration Labs V1/V2.')
+st.set_page_config(page_title='NBA OVER LAB V3.1', page_icon='🏀', layout='wide')
+st.title('🏀 NBA LAB PRO — NBA OVER LAB V3.1 | Probabilidades Over')
+st.caption('Versão focada em probabilidades Over/Under, novas variáveis pré-jogo e validação cronológica. Mantém a app principal e as Labs V1/V2/V3 intactas.')
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / 'nba_lab_data'
 DATA_DIR.mkdir(exist_ok=True)
 GAMES_PATH = DATA_DIR / 'nba_games_history.csv'
-FEATURES_PATH = DATA_DIR / 'nba_features_history.csv'
+FEATURES_PATH = DATA_DIR / 'nba_features_history_v31.csv'
 BASE_URL = 'https://v2.nba.api-sports.io/games'
 
 try:
@@ -84,11 +84,15 @@ def build_features(games):
     def stats(hist, n):
         recent = hist[-n:]
         if not recent:
-            return {'pf': 110.0, 'pa': 110.0, 'win': .5, 'n': 0}
+            return {'pf': 110.0, 'pa': 110.0, 'win': .5, 'total': 220.0, 'pf_std': 12.0, 'pa_std': 12.0, 'total_std': 20.0, 'n': 0}
         return {
             'pf': float(np.mean([x['pf'] for x in recent])),
             'pa': float(np.mean([x['pa'] for x in recent])),
             'win': float(np.mean([x['win'] for x in recent])),
+            'total': float(np.mean([x.get('pf', 110.0) + x.get('pa', 110.0) for x in recent])),
+            'pf_std': float(np.std([x['pf'] for x in recent], ddof=1)) if len(recent) > 1 else 12.0,
+            'pa_std': float(np.std([x['pa'] for x in recent], ddof=1)) if len(recent) > 1 else 12.0,
+            'total_std': float(np.std([x.get('pf', 110.0) + x.get('pa', 110.0) for x in recent], ddof=1)) if len(recent) > 1 else 20.0,
             'n': len(recent),
         }
 
@@ -98,6 +102,7 @@ def build_features(games):
         for _, g in batch.iterrows():
             hid, aid = str(g.home_id), str(g.away_id)
             hh, ah = history.get(hid, []), history.get(aid, [])
+            h3, a3 = stats(hh, 3), stats(ah, 3)
             h5, a5, h10, a10 = stats(hh, 5), stats(ah, 5), stats(hh, 10), stats(ah, 10)
             last_home = hh[-1]['date'] if hh else None
             last_away = ah[-1]['date'] if ah else None
@@ -108,7 +113,13 @@ def build_features(games):
                 'game_id': str(g.game_id), 'date': date, 'season': str(g.season), 'home_team': g.home_team, 'away_team': g.away_team,
                 'home_score': float(g.home_score), 'away_score': float(g.away_score),
                 'home_win': home_win, 'total_points': float(g.home_score + g.away_score),
+                'home_pf3': h3['pf'], 'home_pa3': h3['pa'], 'away_pf3': a3['pf'], 'away_pa3': a3['pa'],
+                'home_total3': h3['total'], 'away_total3': a3['total'],
                 'home_pf5': h5['pf'], 'home_pa5': h5['pa'], 'away_pf5': a5['pf'], 'away_pa5': a5['pa'],
+                'home_total5': h5['total'], 'away_total5': a5['total'],
+                'home_pf_std5': h5['pf_std'], 'away_pf_std5': a5['pf_std'],
+                'home_pa_std5': h5['pa_std'], 'away_pa_std5': a5['pa_std'],
+                'home_total_std5': h5['total_std'], 'away_total_std5': a5['total_std'],
                 'home_win5': h5['win'], 'away_win5': a5['win'], 'home_pf10': h10['pf'], 'home_pa10': h10['pa'],
                 'away_pf10': a10['pf'], 'away_pa10': a10['pa'], 'home_win10': h10['win'], 'away_win10': a10['win'],
                 'home_games_prior': h10['n'], 'away_games_prior': a10['n'], 'rest_home_days': rest_h, 'rest_away_days': rest_a,
@@ -208,20 +219,31 @@ if GAMES_PATH.exists():
 
 if FEATURES_PATH.exists():
     feat = pd.read_csv(FEATURES_PATH, parse_dates=['date'])
-    st.subheader('2. NBA OVER LAB — comparação de modelos')
-    st.caption('Objetivo: prever melhor o total de pontos, com teste cronológico fora da amostra. Não utiliza odds históricas, pelo que não calcula rentabilidade real.')
+    st.subheader('2. NBA OVER LAB V3.1 — probabilidades e calibração')
+    st.caption('Compara previsões de pontos e classificadores probabilísticos por linha. O teste é cronológico e não usa odds históricas; não calcula ROI real.')
     min_prior = st.slider('Mínimo de jogos anteriores por equipa', 0, 10, 3)
-    folds = st.selectbox('Número de janelas cronológicas', [3, 4, 5], index=1)
-    if st.button('Comparar modelos de totais (Over)', type='primary'):
-        from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, HistGradientBoostingRegressor, GradientBoostingRegressor
+    folds = st.selectbox('Número de janelas cronológicas', [3, 4, 5], index=2)
+    if st.button('Executar comparação probabilística Over', type='primary'):
+        from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor, HistGradientBoostingRegressor, GradientBoostingRegressor, HistGradientBoostingClassifier, RandomForestClassifier
         from sklearn.dummy import DummyRegressor
+        from sklearn.impute import SimpleImputer
+        from sklearn.metrics import brier_score_loss, log_loss, accuracy_score, mean_absolute_error, mean_squared_error
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.linear_model import LogisticRegression, Ridge
+
         feat = feat.sort_values(['date', 'game_id']).reset_index(drop=True)
         feat = feat[(feat.home_games_prior >= min_prior) & (feat.away_games_prior >= min_prior)].copy()
         feat = feat.dropna(subset=['total_points'])
         reg_features = [
-            'home_pf5','home_pa5','away_pf5','away_pa5','home_pf10','home_pa10','away_pf10','away_pa10',
-            'rest_home_days','rest_away_days','form_diff5','form_diff10','points_for_diff5','defence_diff5'
+            'home_pf3','home_pa3','away_pf3','away_pa3','home_total3','away_total3',
+            'home_pf5','home_pa5','away_pf5','away_pa5','home_total5','away_total5',
+            'home_pf10','home_pa10','away_pf10','away_pa10','home_total10','away_total10',
+            'home_pf_std5','away_pf_std5','home_pa_std5','away_pa_std5','home_total_std5','away_total_std5',
+            'home_win5','away_win5','home_win10','away_win10','rest_home_days','rest_away_days',
+            'form_diff5','form_diff10','points_for_diff5','defence_diff5'
         ]
+        lines = [215.5, 220.5, 225.5, 230.5]
         if len(feat) < 500:
             st.error(f'Amostra insuficiente após filtros: {len(feat)} jogos.')
         else:
@@ -229,88 +251,114 @@ if FEATURES_PATH.exists():
             initial_train = int(n * 0.60)
             remaining = n - initial_train
             test_size = max(1, remaining // folds)
-            model_specs = {
-                'Ridge (referência)': lambda: make_pipeline(StandardScaler(), Ridge(alpha=10.0)),
-                'Extra Trees': lambda: ExtraTreesRegressor(n_estimators=250, min_samples_leaf=4, max_features=0.9, random_state=42, n_jobs=-1),
-                'Random Forest': lambda: RandomForestRegressor(n_estimators=250, min_samples_leaf=5, max_features=0.9, random_state=42, n_jobs=-1),
-                'Gradient Boosting': lambda: GradientBoostingRegressor(n_estimators=120, learning_rate=0.035, max_depth=2, loss='huber', random_state=42),
-                'Média do treino (baseline)': lambda: DummyRegressor(strategy='mean'),
+            reg_specs = {
+                'Ridge': lambda: make_pipeline(SimpleImputer(strategy='median'), StandardScaler(), Ridge(alpha=10.0)),
+                'Gradient Boosting': lambda: make_pipeline(SimpleImputer(strategy='median'), GradientBoostingRegressor(n_estimators=150, learning_rate=0.03, max_depth=2, loss='huber', random_state=42)),
+                'Extra Trees': lambda: make_pipeline(SimpleImputer(strategy='median'), ExtraTreesRegressor(n_estimators=220, min_samples_leaf=5, max_features=0.85, random_state=42, n_jobs=-1)),
+                'Random Forest': lambda: make_pipeline(SimpleImputer(strategy='median'), RandomForestRegressor(n_estimators=220, min_samples_leaf=6, max_features=0.85, random_state=42, n_jobs=-1)),
+                'Média treino': lambda: make_pipeline(SimpleImputer(strategy='median'), DummyRegressor(strategy='mean')),
             }
-            all_results = []
-            fold_metrics = []
+            clf_specs = {
+                'Logistic Regression': lambda: make_pipeline(SimpleImputer(strategy='median'), StandardScaler(), LogisticRegression(C=0.35, max_iter=1500, class_weight=None)),
+                'Hist Gradient Boosting': lambda: make_pipeline(SimpleImputer(strategy='median'), HistGradientBoostingClassifier(max_iter=120, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=3.0, random_state=42)),
+                'Random Forest Classifier': lambda: make_pipeline(SimpleImputer(strategy='median'), RandomForestClassifier(n_estimators=120, min_samples_leaf=8, max_features=0.85, class_weight='balanced_subsample', random_state=42, n_jobs=-1)),
+            }
+            reg_rows, prob_rows, fold_rows = [], [], []
+            progress = st.progress(0)
+            status = st.empty()
+            fold_ranges = []
             for fold in range(folds):
                 test_start = initial_train + fold * test_size
                 test_end = n if fold == folds - 1 else min(n, test_start + test_size)
-                if test_start >= n or test_end <= test_start:
-                    continue
-                train = feat.iloc[:test_start].copy()
-                test = feat.iloc[test_start:test_end].copy()
-                X_train = train[reg_features].replace([np.inf, -np.inf], np.nan).fillna(0)
-                X_test = test[reg_features].replace([np.inf, -np.inf], np.nan).fillna(0)
+                if test_start < n and test_end > test_start:
+                    fold_ranges.append((fold + 1, test_start, test_end))
+            total_steps = max(1, len(fold_ranges) * (len(reg_specs) + len(lines) * len(clf_specs)))
+            step = 0
+            for fold, test_start, test_end in fold_ranges:
+                train, test = feat.iloc[:test_start].copy(), feat.iloc[test_start:test_end].copy()
+                X_train = train[reg_features].replace([np.inf, -np.inf], np.nan)
+                X_test = test[reg_features].replace([np.inf, -np.inf], np.nan)
                 y_train = train['total_points'].astype(float)
                 y_test = test['total_points'].astype(float).to_numpy()
-                for model_name, factory in model_specs.items():
+                common = test[['game_id','date','season','home_team','away_team','home_score','away_score','total_points']].copy()
+                common['fold'] = fold
+                for name, factory in reg_specs.items():
+                    status.info(f'Janela {fold}/{len(fold_ranges)} — modelo de total: {name}')
                     model = factory()
                     model.fit(X_train, y_train)
-                    pred = model.predict(X_test)
-                    result = test[['game_id','date','season','home_team','away_team','home_score','away_score','total_points']].copy()
-                    result['fold'] = fold + 1
-                    result['model'] = model_name
-                    result['predicted_total'] = pred
-                    result['error'] = result['total_points'].to_numpy() - pred
-                    result['abs_error'] = np.abs(result['error'])
-                    result['actual_over_215_5'] = (result['total_points'] > 215.5).astype(int)
-                    result['pred_over_215_5'] = (pred > 215.5).astype(int)
-                    result['actual_over_220_5'] = (result['total_points'] > 220.5).astype(int)
-                    result['pred_over_220_5'] = (pred > 220.5).astype(int)
-                    result['actual_over_225_5'] = (result['total_points'] > 225.5).astype(int)
-                    result['pred_over_225_5'] = (pred > 225.5).astype(int)
-                    result['actual_over_230_5'] = (result['total_points'] > 230.5).astype(int)
-                    result['pred_over_230_5'] = (pred > 230.5).astype(int)
-                    all_results.append(result)
-                    fold_metrics.append({
-                        'Janela': fold + 1, 'Modelo': model_name, 'Jogos': len(test),
-                        'MAE': mean_absolute_error(y_test, pred),
-                        'RMSE': mean_squared_error(y_test, pred) ** 0.5,
-                        'Correlação previsto-real': float(np.corrcoef(y_test, pred)[0,1]) if np.std(pred) > 1e-9 and np.std(y_test) > 1e-9 else np.nan,
-                        'Viés médio (previsto - real)': float(np.mean(pred-y_test)),
-                    })
-            if all_results:
-                results = pd.concat(all_results, ignore_index=True)
-                metrics = pd.DataFrame(fold_metrics)
-                aggregate = results.groupby('model', sort=False).apply(lambda g: pd.Series({
-                    'Jogos': len(g),
-                    'MAE': mean_absolute_error(g['total_points'], g['predicted_total']),
-                    'RMSE': mean_squared_error(g['total_points'], g['predicted_total']) ** 0.5,
-                    'Correlação previsto-real': float(np.corrcoef(g['total_points'], g['predicted_total'])[0,1]) if g['predicted_total'].std() > 1e-9 else np.nan,
-                    'Viés médio (previsto - real)': float((g['predicted_total']-g['total_points']).mean()),
-                })).reset_index().rename(columns={'model':'Modelo'}).sort_values('MAE')
-                st.markdown('### Comparação agregada — jogos nunca vistos no treino')
-                st.dataframe(aggregate.round(3), use_container_width=True, hide_index=True)
-                best = aggregate.iloc[0]
-                st.success(f"Melhor MAE nesta comparação: {best['Modelo']} — {best['MAE']:.2f} pontos. Esta escolha é exploratória; precisa de confirmação num período futuro independente.")
-                st.markdown('### Desempenho por janela')
-                st.dataframe(metrics.round(3), use_container_width=True, hide_index=True)
-                st.markdown('### Diagnóstico específico para mercados Over')
-                st.caption('A previsão de total acima da linha não equivale a uma aposta lucrativa: aqui medimos apenas se o modelo identifica jogos acima/abaixo de linhas fixas. Não há odds históricas neste conjunto.')
-                diagnostics = []
-                for model_name, g in results.groupby('model', sort=False):
-                    row = {'Modelo': model_name}
-                    for line in [215.5,220.5,225.5,230.5]:
-                        actual_col = f'actual_over_{str(line).replace(".", "_")}'
-                        pred_col = f'pred_over_{str(line).replace(".", "_")}'
-                        row[f'Acerto direção Over/Under {line}'] = float((g[actual_col] == g[pred_col]).mean())
-                        row[f'Over real {line}'] = float(g[actual_col].mean())
-                        row[f'Over previsto {line}'] = float(g[pred_col].mean())
-                    diagnostics.append(row)
-                diag_df = pd.DataFrame(diagnostics)
-                st.dataframe(diag_df.round(3), use_container_width=True, hide_index=True)
-                st.markdown('### Previsões para auditoria')
-                st.dataframe(results[results['model'] != 'Média do treino (baseline)'].head(40), use_container_width=True, hide_index=True)
-                st.download_button('Descarregar comparação de modelos CSV', aggregate.to_csv(index=False).encode('utf-8-sig'), 'nba_over_model_comparison.csv', 'text/csv')
-                st.download_button('Descarregar métricas por janela CSV', metrics.to_csv(index=False).encode('utf-8-sig'), 'nba_over_fold_metrics.csv', 'text/csv')
-                st.download_button('Descarregar previsões Over CSV', results.to_csv(index=False).encode('utf-8-sig'), 'nba_over_predictions.csv', 'text/csv')
-                st.warning('Não uses estes resultados diretamente para apostar. A seleção do melhor modelo nestas janelas pode sobrestimar o desempenho; precisamos de um período futuro independente e de odds históricas para testar valor esperado e ROI.')
+                    pred = np.asarray(model.predict(X_test), dtype=float)
+                    pred = np.clip(pred, 150, 300)
+                    # Estimar a distribuição dos erros uma única vez por modelo/janela,
+                    # usando um bloco cronológico de validação dentro do treino.
+                    split = max(30, int(len(train) * 0.80))
+                    if split < len(train) - 20:
+                        cal_model = factory()
+                        cal_model.fit(train.iloc[:split][reg_features].replace([np.inf,-np.inf],np.nan), train.iloc[:split]['total_points'].astype(float))
+                        cal_pred = cal_model.predict(train.iloc[split:][reg_features].replace([np.inf,-np.inf],np.nan))
+                        residuals = train.iloc[split:]['total_points'].to_numpy(dtype=float) - np.asarray(cal_pred, dtype=float)
+                    else:
+                        residuals = y_train.to_numpy() - np.asarray(model.predict(X_train), dtype=float)
+                    for i, line in enumerate(lines):
+                        actual = (y_test > line).astype(int)
+                        p = np.array([np.mean(pred[j] + residuals > line) for j in range(len(pred))], dtype=float)
+                        p = np.clip(p, 0.01, 0.99)
+                        for j in range(len(test)):
+                            reg_rows.append({**common.iloc[j].to_dict(), 'model': name, 'line': line, 'predicted_total': float(pred[j]), 'actual_over': int(actual[j]), 'over_probability': float(p[j]), 'method': 'Regressão + resíduos cronológicos'})
+                    fold_rows.append({'Janela':fold,'Tipo':'Regressão','Modelo':name,'Jogos':len(test),'MAE':mean_absolute_error(y_test,pred),'RMSE':mean_squared_error(y_test,pred)**0.5,'Correlação':float(np.corrcoef(y_test,pred)[0,1]) if np.std(pred)>1e-9 else np.nan,'Viés previsto-real':float(np.mean(pred-y_test))})
+                    step += 1; progress.progress(min(0.99, step/total_steps))
+                for line in lines:
+                    ytr = (y_train.to_numpy() > line).astype(int)
+                    yte = (y_test > line).astype(int)
+                    for name, factory in clf_specs.items():
+                        status.info(f'Janela {fold}/{len(fold_ranges)} — linha Over {line}: {name}')
+                        if len(np.unique(ytr)) < 2:
+                            continue
+                        clf = factory()
+                        clf.fit(X_train, ytr)
+                        p = np.asarray(clf.predict_proba(X_test)[:,1], dtype=float)
+                        p = np.clip(p, 0.01, 0.99)
+                        for j in range(len(test)):
+                            prob_rows.append({**common.iloc[j].to_dict(), 'fold':fold, 'model':name, 'line':line, 'actual_over':int(yte[j]), 'over_probability':float(p[j]), 'predicted_side':int(p[j]>=0.5), 'method':'Classificador direto'})
+                        fold_rows.append({'Janela':fold,'Tipo':f'Over {line}','Modelo':name,'Jogos':len(test),'MAE':np.nan,'RMSE':np.nan,'Correlação':np.nan,'Viés previsto-real':np.nan})
+                        step += 1; progress.progress(min(0.99, step/total_steps))
+            progress.progress(1.0)
+            status.success('Comparação concluída.')
+            if reg_rows:
+                reg_df = pd.DataFrame(reg_rows)
+                reg_summary = reg_df.groupby('model').agg(Jogos=('total_points','size'), MAE=('total_points', lambda x: np.nan), RMSE=('total_points', lambda x: np.nan)).reset_index()
+                reg_summary = reg_df.groupby('model').apply(lambda g: pd.Series({'Jogos':len(g.drop_duplicates('game_id')),'MAE':mean_absolute_error(g.drop_duplicates('game_id')['total_points'],g.drop_duplicates('game_id')['predicted_total']),'RMSE':mean_squared_error(g.drop_duplicates('game_id')['total_points'],g.drop_duplicates('game_id')['predicted_total'])**0.5,'Correlação':np.corrcoef(g.drop_duplicates('game_id')['total_points'],g.drop_duplicates('game_id')['predicted_total'])[0,1]})).reset_index().sort_values('MAE')
+                st.markdown('### A. Qual modelo prevê melhor o total?')
+                st.dataframe(reg_summary.round(3), use_container_width=True, hide_index=True)
+                st.download_button('Descarregar previsões de totais CSV', reg_df.to_csv(index=False).encode('utf-8-sig'), 'nba_over_regression_predictions_v31.csv', 'text/csv')
+            if prob_rows:
+                prob_df = pd.DataFrame(prob_rows)
+                def safe_logloss(y, p):
+                    return log_loss(y, p, labels=[0,1]) if len(np.unique(y)) == 2 else np.nan
+                summary_rows = []
+                for (line, name), g in prob_df.groupby(['line','model']):
+                    y, p = g['actual_over'].to_numpy(dtype=int), g['over_probability'].to_numpy(dtype=float)
+                    summary_rows.append({'Linha':line,'Modelo':name,'Jogos':len(g),'Taxa Over real':float(y.mean()),'Probabilidade Over média':float(p.mean()),'Brier':brier_score_loss(y,p),'Log Loss':safe_logloss(y,p),'Acerto lado (p≥50%)':accuracy_score(y,(p>=0.5).astype(int)),'Over previsto (p≥50%)':float((p>=0.5).mean())})
+                prob_summary = pd.DataFrame(summary_rows).sort_values(['Linha','Brier'])
+                st.markdown('### B. Probabilidades Over por linha')
+                st.caption('Brier e Log Loss mais baixos são melhores. A taxa Over real é a referência simples. Uma boa previsão probabilística deve ser precisa e calibrada; isto ainda não demonstra rentabilidade sem odds históricas.')
+                st.dataframe(prob_summary.round(4), use_container_width=True, hide_index=True)
+                st.download_button('Descarregar probabilidades Over CSV', prob_df.to_csv(index=False).encode('utf-8-sig'), 'nba_over_probabilities_v31.csv', 'text/csv')
+                st.markdown('### C. Auditoria da calibração')
+                cal_rows=[]
+                for (line,name),g in prob_df.groupby(['line','model']):
+                    bins = pd.cut(g['over_probability'], bins=[0,0.2,0.3,0.4,0.5,0.6,0.7,0.8,1.000001], include_lowest=True)
+                    for interval, part in g.groupby(bins, observed=False):
+                        if len(part):
+                            cal_rows.append({'Linha':line,'Modelo':name,'Intervalo probabilidade':str(interval),'Jogos':len(part),'Prob. média':part['over_probability'].mean(),'Over real':part['actual_over'].mean()})
+                cal_df=pd.DataFrame(cal_rows)
+                st.dataframe(cal_df.round(4),use_container_width=True,hide_index=True)
+                st.download_button('Descarregar calibração CSV',cal_df.to_csv(index=False).encode('utf-8-sig'),'nba_over_calibration_v31.csv','text/csv')
+            if fold_rows:
+                st.markdown('### D. Métricas por janela')
+                fold_df=pd.DataFrame(fold_rows)
+                st.dataframe(fold_df.round(4),use_container_width=True,hide_index=True)
+                st.download_button('Descarregar métricas por janela CSV',fold_df.to_csv(index=False).encode('utf-8-sig'),'nba_over_fold_metrics_v31.csv','text/csv')
+            st.warning('Não uses estas probabilidades diretamente para apostar. A validação ainda precisa de um período futuro independente e odds históricas para avaliar valor esperado, ROI e drawdown.')
 
 st.divider()
-st.markdown('**Fontes de dados:** API-Sports NBA. Esta aplicação é um laboratório separado da app principal e da Calibration Lab V1/V2.')
+st.markdown('**Fontes de dados:** API-Sports NBA. A V3.1 é um laboratório separado; não altera a app principal nem as versões anteriores.')
