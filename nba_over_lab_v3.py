@@ -10,9 +10,9 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import brier_score_loss, log_loss, accuracy_score, mean_absolute_error, mean_squared_error
 
-st.set_page_config(page_title='NBA Calibration Lab', page_icon='🏀', layout='wide')
-st.title('🏀 NBA LAB PRO — Calibration Lab v2')
-st.caption('Laboratório separado da app principal. Auditoria de resultados, features pré-jogo e validação cronológica em várias janelas.')
+st.set_page_config(page_title='NBA OVER LAB V3', page_icon='🏀', layout='wide')
+st.title('🏀 NBA LAB PRO — NBA OVER LAB V3')
+st.caption('Laboratório dedicado à previsão de pontos totais e à validação cronológica de mercados Over/Under. Aplicação separada da app principal e das Calibration Labs V1/V2.')
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / 'nba_lab_data'
