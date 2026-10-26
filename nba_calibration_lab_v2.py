@@ -164,13 +164,34 @@ if st.button('Descarregar / atualizar épocas selecionadas', type='primary', dis
 if GAMES_PATH.exists():
     raw = pd.read_csv(GAMES_PATH, parse_dates=['date'], dtype={'game_id': str})
     scored = raw.dropna(subset=['home_score','away_score']).copy()
-    # Keep only known completed-game statuses; live/in-progress games with scores must not enter training.
-    final_statuses = {'FT', 'AOT', 'AP', 'FINAL', 'FINISHED', 'AFTER OVERTIME', 'AFTER PENALTIES'}
+    # API-Sports pode devolver códigos curtos ou descrições de estado. Normalizar
+    # ambos e mostrar os valores observados para facilitar a auditoria.
+    def is_final_status(value):
+        status = str(value or '').strip().upper()
+        if not status or status in {'NAN', 'NONE', 'NULL'}:
+            return False
+        compact = ''.join(ch for ch in status if ch.isalnum())
+        exact_codes = {'FT', 'AOT', 'AP', 'FINAL', 'FINISHED', 'COMPLETED', 'ENDED'}
+        if compact in exact_codes:
+            return True
+        final_phrases = ('FINISHED', 'FINAL', 'COMPLETED', 'AFTER OVERTIME',
+                         'AFTER PENALTIES', 'GAME ENDED', 'MATCH ENDED')
+        if any(phrase in status for phrase in final_phrases):
+            return True
+        # Accept descriptions such as "FT - Finished" or "AOT (After Overtime)".
+        return compact.startswith(('FTFINISHED', 'AOT', 'AP')) and not any(
+            word in compact for word in ('PENDING', 'NOTFINAL', 'UNFINISHED')
+        )
+
     status_norm = scored['status'].astype(str).str.strip().str.upper()
-    finished = scored[status_norm.isin(final_statuses)].copy()
-    if finished.empty and not scored.empty:
-        st.warning('Existem jogos com resultados, mas nenhum tem um estado final reconhecido. Verifica os valores da coluna status antes de executar o backtest.')
+    finished = scored[status_norm.map(is_final_status)].copy()
     st.caption(f'Jogos com pontuação: {len(scored):,} · jogos com estado final reconhecido: {len(finished):,}.')
+    with st.expander('Auditoria dos estados recebidos pela API'):
+        status_counts = (raw['status'].fillna('(vazio)').astype(str).value_counts()
+                         .rename_axis('status recebido').reset_index(name='número de jogos'))
+        st.dataframe(status_counts, use_container_width=True, hide_index=True)
+    if finished.empty and not scored.empty:
+        st.warning('Ainda não foi reconhecido nenhum estado final. Consulta a tabela "Auditoria dos estados recebidos pela API" e envia-me os valores apresentados; não executes o backtest.')
     st.subheader('Estado da base')
     m1,m2,m3 = st.columns(3)
     m1.metric('Jogos com resultado', f'{len(finished):,}')
