@@ -543,6 +543,73 @@ if API_KEY:
         except ValueError as exc:
             st.error(f"Resposta inválida da API ({api_date_str}): {exc}")
 
+
+# Diagnostic: query November 4 without the season parameter.
+st.markdown("### Teste adicional — API sem parâmetro season")
+
+if API_KEY:
+    try:
+        test_response = requests.get(
+            "https://v2.nba.api-sports.io/games",
+            headers={"x-apisports-key": API_KEY},
+            params={
+                "date": selected_date.strftime("%Y-%m-%d"),
+                "league": "standard"
+            },
+            timeout=20
+        )
+
+        st.write("HTTP status:", test_response.status_code)
+
+        if test_response.status_code == 200:
+            test_payload = test_response.json()
+            test_games = test_payload.get("response", [])
+
+            st.write("Jogos recebidos sem season:", len(test_games))
+
+            if test_payload.get("errors"):
+                st.error(f"Erros da API: {test_payload['errors']}")
+
+            test_rows = []
+
+            for item in test_games:
+                teams = item.get("teams") or {}
+                home = teams.get("home") or {}
+                away = teams.get("visitors") or teams.get("away") or {}
+                start_time = (item.get("date") or {}).get("start")
+
+                if not start_time:
+                    continue
+
+                local_dt = (
+                    pd.to_datetime(start_time, utc=True)
+                    .tz_convert("Europe/Lisbon")
+                )
+
+                test_rows.append({
+                    "ID": item.get("id"),
+                    "Jogo": f"{home.get('name', '?')} vs {away.get('name', '?')}",
+                    "Data API": start_time,
+                    "Data Portugal": local_dt.strftime("%d/%m/%Y %H:%M"),
+                    "Estado": (item.get("status") or {}).get("long", "")
+                })
+
+            if test_rows:
+                st.dataframe(
+                    pd.DataFrame(test_rows),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("A API não devolveu jogos nesta consulta.")
+
+        else:
+            st.error(f"Erro HTTP: {test_response.text[:300]}")
+
+    except requests.RequestException as exc:
+        st.error(f"Erro na consulta de diagnóstico: {exc}")
+
+
 # Show temporary diagnostic information.
 if API_KEY:
     with st.expander("🔎 Diagnóstico API — datas e jogos recebidos", expanded=True):
