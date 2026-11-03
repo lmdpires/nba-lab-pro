@@ -428,57 +428,143 @@ def normalize_score(value):
     except (TypeError, ValueError):
         return None
 
-# Load fixtures for the chosen date.
+
+# Load fixtures for the chosen date, checking the previous API date too.
 games = []
+api_debug = []
+
 if API_KEY:
-    season = str(selected_date.year if selected_date.month >= 10 else selected_date.year - 1)
-    try:
-        response = requests.get(
-            "https://v2.nba.api-sports.io/games",
-            headers={"x-apisports-key": API_KEY},
-            params={"date": date_str, "season": season, "league": "standard"},
-            timeout=20
+    dates_to_query = [
+        selected_date - datetime.timedelta(days=1),
+        selected_date
+    ]
+    seen_game_ids = set()
+
+    for api_date in dates_to_query:
+        api_date_str = api_date.strftime("%Y-%m-%d")
+        season = str(
+            api_date.year if api_date.month >= 10 else api_date.year - 1
         )
-        if response.status_code != 200:
-            st.error(f"Erro HTTP {response.status_code}: {response.text[:250]}")
-        else:
+
+        try:
+            response = requests.get(
+                "https://v2.nba.api-sports.io/games",
+                headers={"x-apisports-key": API_KEY},
+                params={
+                    "date": api_date_str,
+                    "season": season,
+                    "league": "standard"
+                },
+                timeout=20
+            )
+
+            if response.status_code != 200:
+                st.error(
+                    f"Erro HTTP {response.status_code} "
+                    f"na consulta de {api_date_str}: {response.text[:200]}"
+                )
+                continue
+
             payload = response.json()
+
             if payload.get("errors"):
-                st.error(f"Erro da API-NBA: {payload['errors']}")
+                st.error(
+                    f"Erro da API em {api_date_str}: {payload['errors']}"
+                )
+                continue
+
+            raw_games = payload.get("response", [])
+            debug_games = []
+
+            for item in raw_games:
+                teams = item.get("teams") or {}
+                home = teams.get("home") or {}
+                away = teams.get("visitors") or teams.get("away") or {}
+                start_time = (item.get("date") or {}).get("start")
+
+                if not home.get("name") or not away.get("name") or not start_time:
+                    continue
+
+                local_dt = (
+                    pd.to_datetime(start_time, utc=True)
+                    .tz_convert("Europe/Lisbon")
+                )
+
+                debug_games.append({
+                    "ID": item.get("id"),
+                    "Jogo": f"{home['name']} vs {away['name']}",
+                    "Data API": start_time,
+                    "Data Portugal": local_dt.strftime("%d/%m/%Y %H:%M"),
+                    "Estado": (item.get("status") or {}).get("long", "")
+                })
+
+                # Keep only games belonging to the selected date in Portugal.
+                if local_dt.date() != selected_date:
+                    continue
+
+                game_id = str(
+                    item.get("id") or
+                    f"{home['name']}-{away['name']}-{start_time}"
+                )
+
+                if game_id in seen_game_ids:
+                    continue
+
+                status_obj = item.get("status") or {}
+                scores_obj = item.get("scores") or {}
+
+                home_score = normalize_score(scores_obj.get("home"))
+                away_score = normalize_score(
+                    scores_obj.get("visitors") or scores_obj.get("away")
+                )
+
+                games.append({
+                    "id": game_id,
+                    "home": home["name"],
+                    "away": away["name"],
+                    "time": local_dt.strftime("%H:%M"),
+                    "timestamp": local_dt.timestamp(),
+                    "status": normalize_game_status(status_obj),
+                    "status_long": str(status_obj.get("long") or ""),
+                    "home_score": home_score,
+                    "away_score": away_score
+                })
+
+                seen_game_ids.add(game_id)
+
+            api_debug.append({
+                "data_consultada": api_date_str,
+                "total_recebido": len(raw_games),
+                "jogos": debug_games
+            })
+
+        except requests.RequestException as exc:
+            st.error(f"Erro de ligação à API ({api_date_str}): {exc}")
+        except ValueError as exc:
+            st.error(f"Resposta inválida da API ({api_date_str}): {exc}")
+
+# Show temporary diagnostic information.
+if API_KEY:
+    with st.expander("🔎 Diagnóstico API — datas e jogos recebidos", expanded=True):
+        st.write(f"Data selecionada: {date_str}")
+        st.write(f"Jogos apresentados após filtragem: {len(games)}")
+
+        for result in api_debug:
+            st.write(
+                f"Consulta {result['data_consultada']}: "
+                f"{result['total_recebido']} jogos recebidos"
+            )
+            if result["jogos"]:
+                st.dataframe(
+                    pd.DataFrame(result["jogos"]),
+                    use_container_width=True,
+                    hide_index=True
+                )
             else:
-                for item in payload.get("response", []):
-                    teams = item.get("teams") or {}
-                    home = teams.get("home") or {}
-                    away = teams.get("visitors") or teams.get("away") or {}
-                    start_time = (item.get("date") or {}).get("start")
-                    if not home.get("name") or not away.get("name") or not start_time:
-                        continue
-                    local_dt = pd.to_datetime(start_time, utc=True).tz_convert("Europe/Lisbon")
-                    status_obj = item.get("status") or {}
-                    scores_obj = item.get("scores") or {}
-                    home_score = normalize_score(scores_obj.get("home"))
-                    away_score = normalize_score(scores_obj.get("visitors") or scores_obj.get("away"))
-                    games.append({
-                        "id": str(item.get("id", f"{home['name']}-{away['name']}-{start_time}")),
-                        "home": home["name"], "away": away["name"],
-                        "time": local_dt.strftime("%H:%M"), "timestamp": local_dt.timestamp(),
-                        "status": normalize_game_status(status_obj),
-                        "status_long": str(status_obj.get("long") or ""),
-                        "home_score": home_score, "away_score": away_score
-                    })
-    except requests.RequestException as exc:
-        st.error(f"Erro de ligação à API-NBA: {exc}")
-    except ValueError as exc:
-        st.error(f"A resposta da API não é JSON válido: {exc}")
+                st.write("Nenhum jogo válido recebido nesta consulta.")
 
 games.sort(key=lambda g: g["timestamp"])
-deduped, seen = [], set()
-for game in games:
-    key = (game["home"], game["away"], game["time"])
-    if key not in seen:
-        seen.add(key)
-        deduped.append(game)
-games = deduped
+
 
 def parse_api_game(item):
     teams = item.get("teams") or {}
