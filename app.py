@@ -646,7 +646,35 @@ with left:
     if not API_KEY:
         st.warning("Configura `API_SPORTS_NBA_KEY` nas Secrets.")
     elif not games:
-        st.markdown('<div class="empty-state">Não há jogos nesta data.<br>Experimenta outro dia.</div>', unsafe_allow_html=True)
+                st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #122337, #101B29);
+                border: 1px solid #29445B;
+                border-radius: 12px;
+                padding: 28px 16px;
+                text-align: center;
+                margin-top: 8px;
+            ">
+                <div style="
+                    font-size: 32px;
+                    margin-bottom: 12px;
+                ">📅</div>
+                <div style="
+                    color: #E5F1FC;
+                    font-size: 18px;
+                    font-weight: 700;
+                    margin-bottom: 8px;
+                ">Sem jogos agendados</div>
+                <div style="
+                    color: #9CB2C8;
+                    font-size: 13px;
+                    line-height: 1.6;
+                ">
+                    Não existem jogos NBA agendados para esta data.<br>
+                    Seleciona outro dia no calendário para consultar os jogos.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     else:
         # Compact rows; each button is one line when possible.
         with st.container(height=455, border=False):
