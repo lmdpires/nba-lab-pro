@@ -454,7 +454,7 @@ if API_KEY:
                 "date": api_date_str,
                 "season": season,
                 "league": "standard",
-                "timezone": "Europe/Lisbon"
+                
                 },
                 timeout=20
             )
