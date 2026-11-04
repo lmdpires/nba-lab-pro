@@ -450,10 +450,11 @@ if API_KEY:
             response = requests.get(
                 "https://v2.nba.api-sports.io/games",
                 headers={"x-apisports-key": API_KEY},
-                params={
-                    "date": api_date_str,
-                    "season": season,
-                    "league": "standard"
+               params={
+                "date": api_date_str,
+                "season": season,
+                "league": "standard",
+                "timezone": "Europe/Lisbon"
                 },
                 timeout=20
             )
