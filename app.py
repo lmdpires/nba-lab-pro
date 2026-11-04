@@ -611,25 +611,7 @@ if API_KEY:
         st.error(f"Erro na consulta de diagnóstico: {exc}")
 
 
-# Show temporary diagnostic information.
-if API_KEY:
-    with st.expander("🔎 Diagnóstico API — datas e jogos recebidos", expanded=True):
-        st.write(f"Data selecionada: {date_str}")
-        st.write(f"Jogos apresentados após filtragem: {len(games)}")
 
-        for result in api_debug:
-            st.write(
-                f"Consulta {result['data_consultada']}: "
-                f"{result['total_recebido']} jogos recebidos"
-            )
-            if result["jogos"]:
-                st.dataframe(
-                    pd.DataFrame(result["jogos"]),
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.write("Nenhum jogo válido recebido nesta consulta.")
 
 games.sort(key=lambda g: g["timestamp"])
 
