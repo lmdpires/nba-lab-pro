@@ -93,6 +93,20 @@ def save_slip_data(slips, legs):
     slips[SLIP_COLUMNS].to_csv(SLIP_PATH, index=False)
     legs[LEG_COLUMNS].to_csv(LEG_PATH, index=False)
 
+
+def confirm_delete_slip(slip_id):
+    """Apaga um boletim e as respetivas seleções através de callback Streamlit."""
+    slips = load_slips()
+    legs = load_legs()
+    slip_id = str(slip_id)
+    slips = slips[slips["slip_id"].astype(str) != slip_id].copy()
+    legs = legs[legs["slip_id"].astype(str) != slip_id].copy()
+    save_slip_data(slips, legs)
+    if st.session_state.get("manage_slip_id") == slip_id:
+        st.session_state["manage_slip_id"] = None
+    st.session_state["pending_delete_slip_id"] = None
+    st.session_state["delete_slip_feedback"] = f"Boletim {slip_id} eliminado."
+
 def migrate_legacy_bets(slips, legs):
     """Importa apostas antigas como boletins simples, sem apagar o CSV original."""
     old = load_bets()
@@ -1630,6 +1644,10 @@ if active_page == "Ver apostas":
         st.markdown("## Histórico de apostas")
         st.caption("Todos os teus boletins NBA num só lugar. Consulta o resumo ou abre qualquer recibo.")
 
+        delete_feedback = st.session_state.pop("delete_slip_feedback", None)
+        if delete_feedback:
+            st.success(delete_feedback)
+
         if slips_df.empty:
             st.info("Ainda não existem boletins registados.")
         else:
@@ -1870,18 +1888,13 @@ if active_page == "Ver apostas":
                         )
                         confirm_cols = st.columns([1, 1, 5], vertical_alignment="center")
                         with confirm_cols[0]:
-                            if st.button(
+                            st.button(
                                 "Sim, eliminar",
                                 key=f"confirm_delete_slip_{sid}",
                                 type="primary",
-                            ):
-                                slips_df = slips_df[slips_df["slip_id"].astype(str) != sid].copy()
-                                legs_df = legs_df[legs_df["slip_id"].astype(str) != sid].copy()
-                                save_slip_data(slips_df, legs_df)
-                                if st.session_state.get("manage_slip_id") == sid:
-                                    st.session_state["manage_slip_id"] = None
-                                st.session_state["pending_delete_slip_id"] = None
-                                st.rerun()
+                                on_click=confirm_delete_slip,
+                                args=(sid,),
+                            )
                         with confirm_cols[1]:
                             if st.button("Cancelar", key=f"cancel_delete_slip_{sid}"):
                                 st.session_state["pending_delete_slip_id"] = None
