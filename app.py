@@ -124,7 +124,7 @@ def confirm_delete_slip(slip_id):
 
     if slip_id not in set(slips["slip_id"].astype(str)):
         st.session_state["delete_slip_feedback"] = (
-            f"Não foi encontrado o boletim {slip_id}. Atualiza o histórico e tenta novamente."
+            "Não foi possível encontrar o boletim. Atualiza o histórico e tenta novamente."
         )
         st.session_state["delete_slip_feedback_error"] = True
         st.session_state["pending_delete_slip_id"] = None
@@ -142,7 +142,7 @@ def confirm_delete_slip(slip_id):
     if st.session_state.get("manage_slip_id") == slip_id:
         st.session_state["manage_slip_id"] = None
     st.session_state["pending_delete_slip_id"] = None
-    st.session_state["delete_slip_feedback"] = f"Boletim {slip_id} eliminado."
+    st.session_state["delete_slip_feedback"] = "Boletim eliminado com sucesso."
     st.session_state["delete_slip_feedback_error"] = False
 
 
@@ -1688,9 +1688,9 @@ if active_page == "Ver apostas":
         delete_feedback_error = st.session_state.pop("delete_slip_feedback_error", False)
         if delete_feedback:
             if delete_feedback_error:
-                st.error(delete_feedback)
+                st.toast(delete_feedback, icon="⚠️")
             else:
-                st.success(delete_feedback)
+                st.toast(delete_feedback, icon="✅")
 
 
         if slips_df.empty:
