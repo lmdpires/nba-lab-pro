@@ -61,6 +61,7 @@ def save_bets(df):
 # Boletins reais: um registo por boletim e uma linha por seleção.
 SLIP_PATH = Path(__file__).with_name("nba_bet_slips.csv")
 LEG_PATH = Path(__file__).with_name("nba_bet_selections.csv")
+DELETED_LEGACY_PATH = Path(__file__).with_name("nba_deleted_legacy_bets.csv")
 SLIP_COLUMNS = ["slip_id", "saved_at", "bet_type", "stake", "combined_odds", "status", "return_amount", "profit_loss"]
 LEG_COLUMNS = ["selection_id", "slip_id", "game_id", "game_date", "home_team", "away_team",
                "selection", "line", "odds", "away_score", "home_score", "actual_total", "result"]
@@ -93,19 +94,57 @@ def save_slip_data(slips, legs):
     slips[SLIP_COLUMNS].to_csv(SLIP_PATH, index=False)
     legs[LEG_COLUMNS].to_csv(LEG_PATH, index=False)
 
+def load_deleted_legacy_bet_ids():
+    """IDs de apostas antigas eliminadas; evita que a migração as recrie."""
+    if not DELETED_LEGACY_PATH.exists():
+        return set()
+    try:
+        deleted = pd.read_csv(DELETED_LEGACY_PATH)
+        if "legacy_bet_id" not in deleted.columns:
+            return set()
+        return set(deleted["legacy_bet_id"].dropna().astype(str))
+    except Exception:
+        return set()
+
+
+def add_deleted_legacy_bet_id(legacy_bet_id):
+    """Regista a eliminação sem alterar o CSV original de apostas antigas."""
+    deleted_ids = load_deleted_legacy_bet_ids()
+    deleted_ids.add(str(legacy_bet_id))
+    pd.DataFrame({"legacy_bet_id": sorted(deleted_ids)}).to_csv(
+        DELETED_LEGACY_PATH, index=False
+    )
+
 
 def confirm_delete_slip(slip_id):
-    """Apaga um boletim e as respetivas seleções através de callback Streamlit."""
+    """Elimina o boletim e as seleções associadas."""
+    slip_id = str(slip_id)
     slips = load_slips()
     legs = load_legs()
-    slip_id = str(slip_id)
+
+    if slip_id not in set(slips["slip_id"].astype(str)):
+        st.session_state["delete_slip_feedback"] = (
+            f"Não foi encontrado o boletim {slip_id}. Atualiza o histórico e tenta novamente."
+        )
+        st.session_state["delete_slip_feedback_error"] = True
+        st.session_state["pending_delete_slip_id"] = None
+        return
+
+    # Os boletins legacy são importados de nba_actual_bets.csv.
+    # Guardamos um tombstone para não voltarem a aparecer após o rerun.
+    if slip_id.startswith("legacy-"):
+        add_deleted_legacy_bet_id(slip_id[len("legacy-"):])
+
     slips = slips[slips["slip_id"].astype(str) != slip_id].copy()
     legs = legs[legs["slip_id"].astype(str) != slip_id].copy()
     save_slip_data(slips, legs)
+
     if st.session_state.get("manage_slip_id") == slip_id:
         st.session_state["manage_slip_id"] = None
     st.session_state["pending_delete_slip_id"] = None
     st.session_state["delete_slip_feedback"] = f"Boletim {slip_id} eliminado."
+    st.session_state["delete_slip_feedback_error"] = False
+
 
 def migrate_legacy_bets(slips, legs):
     """Importa apostas antigas como boletins simples, sem apagar o CSV original."""
@@ -113,11 +152,12 @@ def migrate_legacy_bets(slips, legs):
     if old.empty:
         return slips, legs, False
     known = set(slips["slip_id"].astype(str)) if not slips.empty else set()
+    deleted_legacy_ids = load_deleted_legacy_bet_ids()
     added = False
     for _, row in old.iterrows():
         legacy_id = str(row.get("bet_id") or uuid.uuid4().hex[:8])
         slip_id = f"legacy-{legacy_id}"
-        if slip_id in known:
+        if slip_id in known or legacy_id in deleted_legacy_ids:
             continue
         try:
             stake = float(row["stake"])
@@ -1645,8 +1685,13 @@ if active_page == "Ver apostas":
         st.caption("Todos os teus boletins NBA num só lugar. Consulta o resumo ou abre qualquer recibo.")
 
         delete_feedback = st.session_state.pop("delete_slip_feedback", None)
+        delete_feedback_error = st.session_state.pop("delete_slip_feedback_error", False)
         if delete_feedback:
-            st.success(delete_feedback)
+            if delete_feedback_error:
+                st.error(delete_feedback)
+            else:
+                st.success(delete_feedback)
+
 
         if slips_df.empty:
             st.info("Ainda não existem boletins registados.")
