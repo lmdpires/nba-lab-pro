@@ -11,6 +11,8 @@ st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 # Registo CSV local; descarregar backups regularmente se a app estiver na Streamlit Cloud.
 LOG_PATH = Path(__file__).with_name("nba_prediction_log.csv")
 MARKET_DRAFT_PATH = Path(__file__).with_name("nba_market_inputs.csv")
+BET_LOG_PATH = Path(__file__).with_name("nba_actual_bets.csv")
+BET_COLUMNS = ["bet_id", "saved_at", "game_id", "game_date", "home_team", "away_team", "selection", "line", "odds", "stake", "actual_total", "result", "profit_loss"]
 LOG_COLUMNS = [
     "record_id", "saved_at", "game_date", "game_id", "start_time",
     "freeze_at", "away_team", "home_team", "model_label", "capture_mode",
@@ -36,6 +38,49 @@ def load_log():
 
 def save_log(df):
     df.to_csv(LOG_PATH, index=False)
+
+def load_bets():
+    if BET_LOG_PATH.exists():
+        try:
+            df = pd.read_csv(BET_LOG_PATH)
+            for col in BET_COLUMNS:
+                if col not in df.columns:
+                    df[col] = None
+            return df[BET_COLUMNS]
+        except Exception:
+            pass
+    return pd.DataFrame(columns=BET_COLUMNS)
+
+def save_bets(df):
+    df.to_csv(BET_LOG_PATH, index=False)
+
+def reconcile_bets(bets, games_by_id):
+    """Settle bets from final API game scores, independently of M2 predictions."""
+    if bets.empty or not games_by_id:
+        return bets, 0
+    changed = 0
+    for idx, bet in bets.iterrows():
+        game = games_by_id.get(normalize_game_id(bet.get("game_id")))
+        if not game or str(game.get("status", "")).upper() != "FT":
+            continue
+        home_score = pd.to_numeric(game.get("home_score"), errors="coerce")
+        away_score = pd.to_numeric(game.get("away_score"), errors="coerce")
+        if pd.isna(home_score) or pd.isna(away_score):
+            continue
+        actual = home_score + away_score
+        try:
+            line, odds, stake = float(bet["line"]), float(bet["odds"]), float(bet["stake"])
+        except (TypeError, ValueError):
+            continue
+        selection = str(bet.get("selection", ""))
+        result = "Push" if actual == line else ("Acertou" if ((selection == "Over" and actual > line) or (selection == "Under" and actual < line)) else "Falhou")
+        profit = 0.0 if result == "Push" else (round(stake * (odds - 1), 2) if result == "Acertou" else round(-stake, 2))
+        if str(bets.at[idx, "result"]) != result or pd.to_numeric(bets.at[idx, "actual_total"], errors="coerce") != actual:
+            bets.at[idx, "actual_total"] = int(actual)
+            bets.at[idx, "result"] = result
+            bets.at[idx, "profit_loss"] = profit
+            changed += 1
+    return bets, changed
 
 def normalize_game_id(value):
     if value is None:
@@ -146,14 +191,10 @@ def recover_predictions_from_saved_drafts(games, log_df, drafts, now=None):
             away_odd = float(draft.get("away_market_odds"))
         except (TypeError, ValueError):
             continue
-        total_line = None
-        p_over = p_under = None
-        if total_reference is not None:
-            try:
-                total_line = float(draft.get("total_line", 220.5))
-                p_over, p_under = probability_over(total_reference, total_line)
-            except (TypeError, ValueError):
-                total_line = None
+        # Fixed reference line for consistent model evaluation; never substitute
+        # the user's exploratory market line from the draft.
+        total_line = 220.5 if total_reference is not None else None
+        p_over, p_under = probability_over(total_reference, total_line) if total_reference is not None else (None, None)
         record = {
             "record_id": str(uuid.uuid4())[:8],
             "saved_at": draft_time.isoformat(timespec="seconds"),
@@ -258,7 +299,7 @@ def auto_freeze_predictions(games, log_df, now=None):
             "freeze_at": freeze_at.isoformat(timespec="seconds"),
             "away_team": away, "home_team": home,
             "model_label": "Moneyline demonstrativo; Total M2 HGB v1 congelado" if total_reference is not None else "Moneyline demonstrativo; M2 indisponível",
-            "capture_mode": "Automático T-5",
+            "capture_mode": "Automático após T-5 (app ativa)",
             "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
             "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
             "fair_home_odds": round(1 / p_home, 3), "fair_away_odds": round(1 / p_away, 3),
@@ -582,15 +623,24 @@ def parse_api_game(item):
 
 # Load the persistent prediction history and fetch any past dates that still need results.
 log_df = load_log()
+bets_df = load_bets()
 market_drafts = load_market_drafts()
-result_games_by_id = {str(g["id"]): g for g in games}
-if API_KEY and not log_df.empty:
-    unresolved_dates = sorted({
-        str(d) for d in log_df.loc[
-            ~log_df["game_status"].astype(str).str.lower().eq("final"), "game_date"
-        ].dropna().tolist()
-        if str(d) and str(d) != date_str
-    })
+result_games_by_id = {normalize_game_id(g["id"]): g for g in games}
+if API_KEY:
+    unresolved_dates = set()
+    if not log_df.empty:
+        unresolved_dates.update(
+            str(d) for d in log_df.loc[
+                ~log_df["game_status"].astype(str).str.lower().eq("final"), "game_date"
+            ].dropna().tolist() if str(d) and str(d) != date_str
+        )
+    if not bets_df.empty:
+        unresolved_dates.update(
+            str(d) for d in bets_df.loc[
+                ~bets_df["result"].isin(["Acertou", "Falhou", "Push"]), "game_date"
+            ].dropna().tolist() if str(d) and str(d) != date_str
+        )
+    unresolved_dates = sorted(unresolved_dates)
     # Query only dates represented in the log, rather than re-fetching the entire season.
     for historical_date in unresolved_dates:
         try:
@@ -614,26 +664,17 @@ if API_KEY and not log_df.empty:
 
 # Automatic prediction freeze and result reconciliation. Runs whenever the app reruns.
 log_df, new_snapshots = auto_freeze_predictions(games, log_df)
-# Enrich newly frozen snapshots with odds/line previously entered for that game.
+# Keep the statistical forecast immutable: total_line=220.5 is a fixed
+# reference line for model evaluation. User-selected market lines stay in drafts
+# and, when an actual wager is placed, are recorded in the separate bet ledger.
 if new_snapshots and not log_df.empty:
     for idx, row in log_df.tail(new_snapshots).iterrows():
         draft = market_drafts.get(normalize_game_id(row.get("game_id")), {})
-        if draft:
-            for source_key, target_key in [
-                ("home_market_odds", "home_market_odds"),
-                ("away_market_odds", "away_market_odds"),
-                ("total_line", "total_line")
-            ]:
-                value = draft.get(source_key)
-                if pd.notna(value):
-                    log_df.at[idx, target_key] = float(value)
-            try:
-                line = float(log_df.at[idx, "total_line"])
-                reference = float(log_df.at[idx, "total_reference"])
-                log_df.at[idx, "total_gap"] = round(reference - line, 1)
-                log_df.at[idx, "total_pick"] = "Over" if reference > line else ("Under" if reference < line else "Sem seleção")
-            except (TypeError, ValueError):
-                pass
+        for source_key in ("home_market_odds", "away_market_odds"):
+            value = draft.get(source_key)
+            if pd.notna(value):
+                target_key = source_key
+                log_df.at[idx, target_key] = float(value)
 log_df, recovered_snapshots = recover_predictions_from_saved_drafts(
     list(result_games_by_id.values()), log_df, market_drafts
 )
@@ -889,6 +930,58 @@ with right:
 st.markdown('<hr><div class="small-note">NBA LAB PRO · Moneyline mantém a implementação anterior. Motor principal de Total de Pontos: M2 HGB v1 congelado. Ridge legado não é chamado pela aplicação. Candidato em validação prospectiva; não assumir rentabilidade.</div>', unsafe_allow_html=True)
 
 
+st.markdown("## Registar aposta real")
+st.caption("Este registo é independente das previsões M2. Introduz apenas apostas que efetivamente colocaste, com a linha e a odd do boletim.")
+bets_df = load_bets()
+if games:
+    game_options = {
+        f"{selected_date.strftime('%d/%m/%Y')} · {g['away']} @ {g['home']} · {g['time']}": g
+        for g in games
+    }
+    with st.form("actual_bet_form", clear_on_submit=True):
+        selected_label = st.selectbox("Jogo", list(game_options.keys()))
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            bet_side = st.selectbox("Seleção", ["Over", "Under"])
+        with c2:
+            bet_line = st.number_input("Linha apostada", min_value=100.0, max_value=350.0, value=220.5, step=0.5)
+        with c3:
+            bet_odds = st.number_input("Odd", min_value=1.01, max_value=100.0, value=1.90, step=0.01)
+        with c4:
+            bet_stake = st.number_input("Stake (€)", min_value=0.01, max_value=100000.0, value=1.0, step=0.5)
+        submitted_bet = st.form_submit_button("Guardar aposta real", use_container_width=True)
+    if submitted_bet:
+        game_row = game_options[selected_label]
+        new_bet = {
+            "bet_id": str(uuid.uuid4())[:8],
+            "saved_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "game_id": str(game_row["id"]), "game_date": selected_date.isoformat(),
+            "home_team": game_row["home"], "away_team": game_row["away"],
+            "selection": bet_side, "line": float(bet_line), "odds": float(bet_odds),
+            "stake": float(bet_stake), "actual_total": None, "result": "Pendente", "profit_loss": None
+        }
+        bets_df = pd.concat([bets_df, pd.DataFrame([new_bet])], ignore_index=True)
+        bets_df, _ = reconcile_bets(bets_df, result_games_by_id)
+        save_bets(bets_df)
+        st.success("Aposta real guardada no registo separado.")
+else:
+    st.info("Não há jogos disponíveis na data selecionada. Escolhe outra data para registar uma aposta.")
+
+bets_df, bets_changed = reconcile_bets(load_bets(), result_games_by_id)
+if bets_changed:
+    save_bets(bets_df)
+if not bets_df.empty:
+    settled = bets_df[bets_df["result"].isin(["Acertou", "Falhou", "Push"])]
+    wagered = pd.to_numeric(bets_df["stake"], errors="coerce").fillna(0).sum()
+    pnl = pd.to_numeric(settled["profit_loss"], errors="coerce").fillna(0).sum()
+    b1, b2, b3 = st.columns(3)
+    b1.metric("Apostas reais", len(bets_df))
+    b2.metric("Apostas avaliadas", len(settled))
+    b3.metric("Resultado líquido", f"€{pnl:.2f}")
+    st.dataframe(bets_df[["game_date", "away_team", "home_team", "selection", "line", "odds", "stake", "actual_total", "result", "profit_loss"]], use_container_width=True, hide_index=True)
+    st.download_button("Descarregar registo de apostas", data=bets_df.to_csv(index=False).encode("utf-8-sig"), file_name="nba_actual_bets_backup.csv", mime="text/csv")
+    st.caption("A avaliação da aposta usa o total final do jogo associado ao registo de previsões. Push devolve a stake (lucro/prejuízo zero).")
+
 st.markdown("## Resultados e avaliação automática")
 st.caption("Os resultados finais vêm da API-Sports NBA. As previsões são congeladas automaticamente a partir de T−5 quando a aplicação executa uma atualização.")
 
@@ -916,14 +1009,15 @@ else:
         axis=1
     )
     history["Total real"] = pd.to_numeric(history["actual_total"], errors="coerce")
-    history["Linha"] = pd.to_numeric(history["total_line"], errors="coerce")
+    history["Linha de referência/registada"] = pd.to_numeric(history["total_line"], errors="coerce")
     history["Prob. casa"] = pd.to_numeric(history["p_home"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
     history["Prob. visitante"] = pd.to_numeric(history["p_away"], errors="coerce").map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
     display_cols = [
         "game_date", "home_team", "away_team", "Resultado",
         "moneyline_pick", "moneyline_result", "Prob. casa", "Prob. visitante",
-        "total_reference", "Linha", "total_pick", "Total real", "total_result", "capture_mode"
+        "total_reference", "Linha de referência/registada", "total_pick", "Total real", "total_result", "capture_mode"
     ]
+    st.caption("As novas previsões usam a referência fixa de 220,5. Os registos históricos anteriores são preservados tal como estavam, incluindo linhas que possam ter sido introduzidas manualmente.")
     st.dataframe(
         history[display_cols].rename(columns={
             "game_date": "Data", "home_team": "Casa", "away_team": "Visitante",
@@ -940,7 +1034,7 @@ else:
         mime="text/csv",
         use_container_width=True
     )
-    st.warning("Limitação importante: o registo automático só acontece quando o Streamlit executa uma atualização. Para garantir o congelamento exato em T−5, é necessário um agendador externo ou manter uma atualização periódica ativa. A linha total usada automaticamente é uma referência demonstrativa de 220,5, não uma linha de bookmaker. As odds de mercado ficam vazias nesta versão.")
+    st.warning("Limitação importante: o registo automático só acontece quando o Streamlit executa uma atualização. Para garantir o congelamento exato em T−5, é necessário um agendador externo ou manter uma atualização periódica ativa. A linha de referência fixa de 220,5 serve apenas para avaliar a previsão estatística de forma consistente; não representa uma linha de bookmaker. As apostas reais são registadas separadamente com a linha e odd efetivamente escolhidas.")
     pending_final = log_df[~log_df["game_status"].astype(str).str.lower().eq("final")]
     if not pending_final.empty:
         st.caption(f"Há {len(pending_final)} previsões ainda sem resultado final confirmado pela API. Os resultados são reconciliados pelas datas guardadas no histórico em cada atualização.")
