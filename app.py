@@ -11,6 +11,12 @@ from nba_over_m2_live import predict_total, probability_over
 
 st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 
+
+# Notificações temporárias após operações concluídas com sucesso.
+_pending_bet_toast = st.session_state.pop("nba_bet_success_toast", None)
+if _pending_bet_toast:
+    st.toast(_pending_bet_toast, icon="✅", duration="short")
+
 # Registo CSV local; descarregar backups regularmente se a app estiver na Streamlit Cloud.
 LOG_PATH = Path(__file__).with_name("nba_prediction_log.csv")
 MARKET_DRAFT_PATH = Path(__file__).with_name("nba_market_inputs.csv")
@@ -1673,6 +1679,15 @@ if active_page == "Ver calendário":
 
 if active_page == "Adicionar aposta":
     with main_area:
+        if st.session_state.pop("nba_bet_reset_form", False):
+            st.session_state["draft_bet_type"] = "Múltipla"
+            st.session_state["draft_bet_stake"] = 5.0
+            st.session_state["draft_bet_combined"] = 1.90
+            st.session_state["draft_leg_side"] = "Moneyline"
+            st.session_state["draft_leg_odds"] = 1.90
+            st.session_state["draft_leg_line"] = 220.5
+            st.session_state["draft_leg_moneyline_winner"] = None
+            st.session_state["draft_leg_date"] = selected_date
         st.markdown("## Adicionar aposta")
         st.caption("Regista uma aposta simples ou múltipla.")
         st.markdown("### Criar boletim")
@@ -1945,7 +1960,10 @@ if active_page == "Adicionar aposta":
                     legs_df = pd.concat([legs_df, pd.DataFrame(leg_rows)], ignore_index=True)
                     save_slip_data(slips_df, legs_df)
                     st.session_state["bet_slip_draft_legs"] = []
-                    st.success("Boletim guardado com sucesso.")
+                    st.session_state["nba_bet_success_toast"] = (
+                        f"Boletim #{len(slips_df):03d} registado com sucesso!"
+                    )
+                    st.session_state["nba_bet_reset_form"] = True
                     st.rerun()
             if not can_save:
                 st.caption("Para guardar uma simples, adiciona exatamente uma seleção. Para uma múltipla, adiciona pelo menos duas.")
