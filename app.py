@@ -1680,14 +1680,21 @@ if active_page == "Ver calendário":
 if active_page == "Adicionar aposta":
     with main_area:
         if st.session_state.pop("nba_bet_reset_form", False):
-            st.session_state["draft_bet_type"] = "Múltipla"
-            st.session_state["draft_bet_stake"] = 5.0
-            st.session_state["draft_bet_combined"] = 1.90
-            st.session_state["draft_leg_side"] = "Moneyline"
-            st.session_state["draft_leg_odds"] = 1.90
-            st.session_state["draft_leg_line"] = 220.5
-            st.session_state["draft_leg_moneyline_winner"] = None
-            st.session_state["draft_leg_date"] = selected_date
+            # Limpar o estado dos widgets antes de estes serem criados neste rerun.
+            # Não atribuir None ao selectbox do vencedor: o valor tem de pertencer
+            # às opções atuais, caso contrário o Streamlit lança KeyError.
+            for widget_key in (
+                "draft_bet_type",
+                "draft_bet_stake",
+                "draft_bet_combined",
+                "draft_leg_side",
+                "draft_leg_odds",
+                "draft_leg_line",
+                "draft_leg_moneyline_winner",
+                "draft_leg_date",
+                "draft_leg_game",
+            ):
+                st.session_state.pop(widget_key, None)
         st.markdown("## Adicionar aposta")
         st.caption("Regista uma aposta simples ou múltipla.")
         st.markdown("### Criar boletim")
