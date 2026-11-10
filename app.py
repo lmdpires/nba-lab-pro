@@ -2,6 +2,8 @@ import datetime
 import copy
 import uuid
 import io
+import json
+import re
 import zipfile
 from html import escape
 from pathlib import Path
@@ -1498,6 +1500,563 @@ with nav_area:
             st.session_state["nba_active_page"] = page_name
             st.rerun()
 
+
+
+# ---------------------------------------------------------------------------
+# RELATÓRIO DIÁRIO NBA LAB PRO — captura pré-jogo e atualização pós-jogo.
+# Esta secção é isolada: não altera os CSVs operacionais nem os motores M1/M2.
+# ---------------------------------------------------------------------------
+DAILY_REPORT_DIR = "nba_daily_reports"
+DUNKAPI_ODDS_URL = "https://mcp.dunkapi.com/v1/get_odds"
+DAILY_REFERENCE_TOTAL_LINE = 220.5
+
+
+def _daily_json_bytes(value):
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+
+
+def _daily_local_report_path(filename):
+    folder = Path(__file__).with_name(DAILY_REPORT_DIR)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / filename
+
+
+def _daily_github_read_bytes(path):
+    if not github_configured():
+        return None
+    repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    response = requests.get(
+        f"{GITHUB_API}/repos/{repo}/contents/{path}",
+        headers=github_read_headers(),
+        params={"ref": branch},
+        timeout=20,
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    import base64
+    return base64.b64decode(response.json()["content"])
+
+
+def _daily_read_json(filename):
+    path = f"{DAILY_REPORT_DIR}/{filename}"
+    if github_configured():
+        content = _daily_github_read_bytes(path)
+        if content is None:
+            return None
+        return json.loads(content.decode("utf-8"))
+    local_path = _daily_local_report_path(filename)
+    if not local_path.exists():
+        return None
+    return json.loads(local_path.read_text(encoding="utf-8"))
+
+
+def _daily_create_json(filename, payload):
+    """Create-only persistence: never overwrite an existing pre-game snapshot."""
+    path = f"{DAILY_REPORT_DIR}/{filename}"
+    content = _daily_json_bytes(payload)
+    if github_configured():
+        existing = _daily_github_read_bytes(path)
+        if existing is not None:
+            return json.loads(existing.decode("utf-8")), False
+        import base64
+        repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+        branch = st.secrets.get("GITHUB_BRANCH", "main")
+        response = requests.put(
+            f"{GITHUB_API}/repos/{repo}/contents/{path}",
+            headers=github_headers(),
+            json={
+                "message": f"Add NBA daily report {filename}",
+                "content": base64.b64encode(content).decode("ascii"),
+                "branch": branch,
+            },
+            timeout=30,
+        )
+        if response.status_code in (409, 422):
+            existing = _daily_github_read_bytes(path)
+            if existing is not None:
+                return json.loads(existing.decode("utf-8")), False
+        response.raise_for_status()
+        return payload, True
+
+    local_path = _daily_local_report_path(filename)
+    if local_path.exists():
+        return json.loads(local_path.read_text(encoding="utf-8")), False
+    local_path.write_bytes(content)
+    return payload, True
+
+
+def _daily_list_pending_reports():
+    """Return pre-game captures without a corresponding results archive."""
+    if github_configured():
+        repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+        branch = st.secrets.get("GITHUB_BRANCH", "main")
+        response = requests.get(
+            f"{GITHUB_API}/repos/{repo}/contents/{DAILY_REPORT_DIR}",
+            headers=github_read_headers(),
+            params={"ref": branch},
+            timeout=20,
+        )
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        names = [item.get("name", "") for item in response.json() if item.get("type") == "file"]
+    else:
+        folder = Path(__file__).with_name(DAILY_REPORT_DIR)
+        names = [p.name for p in folder.glob("*.json")] if folder.exists() else []
+
+    pregame_dates = sorted(
+        name[:-len("_pregame.json")]
+        for name in names
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}_pregame\.json", name)
+    )
+    return [
+        day for day in pregame_dates
+        if f"{day}_results.json" not in names
+    ]
+
+
+def _daily_save_results(filename, payload):
+    """Results are a separate immutable file; the original pre-game file is untouched."""
+    return _daily_create_json(filename, payload)
+
+
+def _daily_get_dunk_key():
+    try:
+        return str(st.secrets.get("DUNKAPI_KEY", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _daily_fetch_dunk_odds(et_dates):
+    """One POST per distinct Eastern date; no automatic retries."""
+    api_key = _daily_get_dunk_key()
+    if not api_key:
+        raise RuntimeError("DUNKAPI_KEY não encontrada nos Secrets do Streamlit Cloud.")
+    responses = []
+    for et_day in sorted(set(et_dates)):
+        response = requests.post(
+            DUNKAPI_ODDS_URL,
+            headers={"x-api-key": api_key, "Accept": "application/json"},
+            json={"date": et_day},
+            timeout=60,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"DunkAPI devolveu HTTP {response.status_code} para {et_day}: "
+                f"{response.text[:250]}"
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f"DunkAPI devolveu JSON inválido para {et_day}.") from exc
+        if isinstance(payload, dict) and payload.get("errors"):
+            raise RuntimeError(f"DunkAPI devolveu erros para {et_day}: {payload['errors']}")
+        responses.append({
+            "query_date_et": et_day,
+            "requested_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "estimated_credits": 10,
+            "payload": payload,
+        })
+    return responses
+
+
+def _daily_flatten_odds(raw_responses, games_by_id):
+    """Flatten bookmaker records where possible, while retaining the untouched raw payload."""
+    records = []
+    wanted = (
+        "home_ml_open", "home_ml_close", "away_ml_open", "away_ml_close",
+        "captured_at", "provider", "game_id",
+    )
+
+    def walk(node, inherited=None):
+        inherited = dict(inherited or {})
+        if isinstance(node, list):
+            for child in node:
+                walk(child, inherited)
+            return
+        if not isinstance(node, dict):
+            return
+
+        merged = dict(inherited)
+        for key in ("game_id", "id", "home_team", "away_team", "home", "away",
+                    "starts_at", "provider", "bookmaker", *wanted):
+            if key in node and node[key] is not None:
+                merged[key] = node[key]
+
+        has_odds = any(k in node for k in (
+            "home_ml_open", "home_ml_close", "away_ml_open", "away_ml_close"
+        ))
+        if has_odds:
+            gid = str(merged.get("game_id", merged.get("id", "")))
+            matched = games_by_id.get(gid, {})
+            starts_at = merged.get("starts_at") or matched.get("starts_at")
+            captured_at = merged.get("captured_at")
+            before_start = None
+            minutes_before = None
+            try:
+                start_ts = pd.to_datetime(starts_at, utc=True)
+                capture_ts = pd.to_datetime(captured_at, utc=True)
+                minutes_before = (start_ts - capture_ts).total_seconds() / 60
+                before_start = bool(capture_ts < start_ts)
+            except Exception:
+                pass
+
+            provider = merged.get("provider", merged.get("bookmaker", ""))
+            if isinstance(provider, dict):
+                provider = provider.get("name") or provider.get("title") or provider.get("id")
+            records.append({
+                "game_id": gid,
+                "home_team": merged.get("home_team", matched.get("home_team", "")),
+                "away_team": merged.get("away_team", matched.get("away_team", "")),
+                "starts_at": starts_at,
+                "provider": provider,
+                "home_ml_open": merged.get("home_ml_open"),
+                "home_ml_close": merged.get("home_ml_close"),
+                "away_ml_open": merged.get("away_ml_open"),
+                "away_ml_close": merged.get("away_ml_close"),
+                "captured_at": captured_at,
+                "captured_before_start": before_start,
+                "minutes_before_start": minutes_before,
+            })
+
+        for key, value in node.items():
+            if isinstance(value, (dict, list)):
+                child_context = dict(merged)
+                if key.lower() in {"bookmaker", "bookmakers", "provider", "providers"} and isinstance(value, dict):
+                    child_context.setdefault("provider", value.get("name") or value.get("title") or value.get("id"))
+                walk(value, child_context)
+
+    for response in raw_responses:
+        walk(response.get("payload"))
+    return records
+
+
+def _daily_build_predictions(day_games, captured_at):
+    rows = []
+    for game in day_games:
+        kickoff = datetime.datetime.fromtimestamp(
+            float(game["timestamp"]), tz=datetime.timezone.utc
+        )
+        m1_result = predict_moneyline_m1(game["home"], game["away"], pd.Timestamp(kickoff))
+        p_home = float(m1_result["p_home_m1"])
+        p_away = float(m1_result["p_away_m1"])
+        if not (0 <= p_home <= 1 and 0 <= p_away <= 1) or abs(p_home + p_away - 1) > 1e-8:
+            raise RuntimeError(f"Probabilidades M1 inválidas no jogo {game['id']}.")
+
+        total_reference, m2_error = predict_total(
+            game["home"], game["away"], kickoff=pd.Timestamp(kickoff)
+        )
+        if total_reference is None:
+            raise RuntimeError(f"M2 indisponível para {game['away']} @ {game['home']}: {m2_error}")
+        total_line = DAILY_REFERENCE_TOTAL_LINE
+        p_over, p_under = probability_over(total_reference, total_line)
+        market_draft = load_market_drafts().get(normalize_game_id(game["id"]), {})
+        rows.append({
+            "captured_at_utc": captured_at,
+            "game_id": str(game["id"]),
+            "game_date_portugal": pd.Timestamp(kickoff).tz_convert("Europe/Lisbon").date().isoformat(),
+            "game_date_et": pd.Timestamp(kickoff).tz_convert("America/New_York").date().isoformat(),
+            "starts_at_utc": pd.Timestamp(kickoff).isoformat(),
+            "home_team": game["home"],
+            "away_team": game["away"],
+            "game_status_at_capture": game.get("status"),
+            "m1_version": "M1 v1.1",
+            "m1_p_home": p_home,
+            "m1_p_away": p_away,
+            "m1_fair_home_odds": (1 / p_home) if p_home > 0 else None,
+            "m1_fair_away_odds": (1 / p_away) if p_away > 0 else None,
+            "m1_pick": "Casa" if p_home >= p_away else "Fora",
+            "m2_version": "M2 HGB v1 frozen",
+            "m2_total_points": float(total_reference),
+            "m2_reference_line": total_line,
+            "m2_p_over": float(p_over),
+            "m2_p_under": float(p_under),
+            "m2_fair_over_odds": (1 / float(p_over)) if p_over > 0 else None,
+            "m2_fair_under_odds": (1 / float(p_under)) if p_under > 0 else None,
+            "market_home_odds_manual": market_draft.get("home_market_odds"),
+            "market_away_odds_manual": market_draft.get("away_market_odds"),
+            "market_total_line_manual": market_draft.get("total_line"),
+        })
+    return rows
+
+
+def _daily_collect_results(pregame_payload):
+    """Fetch final scores from API-Sports for the games in the immutable pre-game snapshot."""
+    if not API_KEY:
+        raise RuntimeError("API_SPORTS_NBA_KEY não configurada.")
+    games_saved = pregame_payload.get("games", [])
+    et_dates = sorted({str(g["game_date_et"]) for g in games_saved})
+    found = {}
+    api_calls = []
+    for et_day in et_dates:
+        et_date = datetime.date.fromisoformat(et_day)
+        season = str(et_date.year if et_date.month >= 10 else et_date.year - 1)
+        payload, api_error = fetch_nba_api_date(et_day, season, API_KEY)
+        if api_error or payload is None:
+            raise RuntimeError(f"API-Sports falhou para {et_day}: {api_error}")
+        api_calls.append({"date_et": et_day, "games_received": len(payload.get("response", []))})
+        for item in payload.get("response", []):
+            parsed = parse_api_game(item)
+            if parsed:
+                found[str(parsed["id"])] = parsed
+
+    results = []
+    unresolved = []
+    for saved in games_saved:
+        gid = str(saved["game_id"])
+        current = found.get(gid)
+        if current is None:
+            unresolved.append(gid)
+            continue
+        status = str(current.get("status", "NS")).upper()
+        is_final = status == "FT" and current.get("home_score") is not None and current.get("away_score") is not None
+        is_cancelled = status in {"CANC", "CANCELLED", "POSTPONED", "PST"}
+        if not is_final and not is_cancelled:
+            unresolved.append(gid)
+        result = {
+            "game_id": gid,
+            "home_team": saved["home_team"],
+            "away_team": saved["away_team"],
+            "status": status,
+            "home_score": current.get("home_score"),
+            "away_score": current.get("away_score"),
+            "actual_total": (
+                int(current["home_score"]) + int(current["away_score"])
+                if is_final else None
+            ),
+            "result_updated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        if is_final:
+            home_won = int(current["home_score"]) > int(current["away_score"])
+            result["actual_home_win"] = int(home_won)
+            result["actual_over_220_5"] = int(result["actual_total"] > DAILY_REFERENCE_TOTAL_LINE)
+            result["m1_moneyline_correct"] = (
+                (saved["m1_pick"] == "Casa" and home_won)
+                or (saved["m1_pick"] == "Fora" and not home_won)
+            )
+            result["m2_over_under_correct"] = (
+                (saved["m2_p_over"] >= 0.5 and result["actual_total"] > DAILY_REFERENCE_TOTAL_LINE)
+                or (saved["m2_p_over"] < 0.5 and result["actual_total"] < DAILY_REFERENCE_TOTAL_LINE)
+            ) if result["actual_total"] != DAILY_REFERENCE_TOTAL_LINE else None
+            result["m1_brier"] = (float(saved["m1_p_home"]) - float(home_won)) ** 2
+            result["m2_over_brier"] = (float(saved["m2_p_over"]) - float(result["actual_over_220_5"])) ** 2
+        results.append(result)
+
+    return {
+        "updated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "api_sports_queries": api_calls,
+        "results": results,
+        "unresolved_game_ids": unresolved,
+        "all_games_resolved": len(unresolved) == 0 and len(results) == len(games_saved),
+    }
+
+
+def _daily_zip_bytes(pregame_payload, odds_rows, results_payload=None):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("report_metadata.json", _daily_json_bytes({
+            "report_date": pregame_payload.get("report_date"),
+            "phase": "completed" if results_payload else "pregame",
+            "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "sources": ["M1 v1.1", "M2 HGB v1", "DunkAPI get_odds", "API-Sports NBA"],
+            "dunkapi_estimated_credits": pregame_payload.get("dunkapi_estimated_credits", 0),
+            "results_included": bool(results_payload),
+        }))
+        archive.writestr("daily_predictions.csv", pd.DataFrame(pregame_payload.get("predictions", [])).to_csv(index=False).encode("utf-8-sig"))
+        archive.writestr("dunkapi_odds_rows.csv", pd.DataFrame(odds_rows or []).to_csv(index=False).encode("utf-8-sig"))
+        archive.writestr("dunkapi_raw_responses.json", _daily_json_bytes(pregame_payload.get("dunkapi_responses", [])))
+        archive.writestr("games_at_capture.json", _daily_json_bytes(pregame_payload.get("games", [])))
+        archive.writestr("model_versions.json", _daily_json_bytes({
+            "moneyline": "M1 v1.1",
+            "total_points": "M2 HGB v1 frozen",
+            "m2_reference_line": DAILY_REFERENCE_TOTAL_LINE,
+        }))
+        if results_payload:
+            archive.writestr("games_results.csv", pd.DataFrame(results_payload.get("results", [])).to_csv(index=False).encode("utf-8-sig"))
+            archive.writestr("results_update.json", _daily_json_bytes(results_payload))
+        quality = {
+            "games_captured": len(pregame_payload.get("games", [])),
+            "games_excluded_after_tipoff_or_unconfirmed": len(pregame_payload.get("excluded_games", [])),
+            "predictions_captured": len(pregame_payload.get("predictions", [])),
+            "odds_rows": len(odds_rows or []),
+            "odds_rows_with_verified_pregame_timestamp": sum(1 for r in (odds_rows or []) if r.get("captured_before_start") is True),
+            "odds_rows_with_missing_or_invalid_timestamp": sum(1 for r in (odds_rows or []) if r.get("captured_before_start") is None),
+            "odds_rows_captured_after_start": sum(1 for r in (odds_rows or []) if r.get("captured_before_start") is False),
+            "unresolved_game_ids": results_payload.get("unresolved_game_ids", []) if results_payload else None,
+        }
+        archive.writestr("data_quality_report.json", _daily_json_bytes(quality))
+
+        # Include relevant current data files as read-only copies. Never include Secrets.
+        data_files = [
+            "nba_prediction_log.csv", "nba_market_inputs.csv",
+            "nba_bet_slips.csv", "nba_bet_selections.csv",
+            "nba_actual_bets.csv", "nba_games_history.csv",
+            "nba_over_m2_history.csv", "nba_over_m2_metadata.json",
+        ]
+        for filename in data_files:
+            file_path = Path(__file__).with_name(filename)
+            if file_path.exists() and file_path.is_file():
+                archive.write(file_path, arcname=f"app_data/{filename}")
+    return buffer.getvalue()
+
+
+def _daily_report_action(selected_day, current_games):
+    """Single button state machine: capture first; on a later click, resolve a completed pending day."""
+    today_key = selected_day.isoformat()
+    pending_days = _daily_list_pending_reports()
+
+    # Prefer an older pending report that is now fully final; this supports the next-day click.
+    candidate_days = [d for d in pending_days if d <= today_key]
+    target_day = candidate_days[0] if candidate_days else None
+
+    if target_day:
+        pregame = _daily_read_json(f"{target_day}_pregame.json")
+        results_payload = _daily_collect_results(pregame)
+        if not results_payload["all_games_resolved"]:
+            remaining = len(results_payload["unresolved_game_ids"])
+            raise RuntimeError(
+                f"O relatório de {target_day} ainda tem {remaining} jogo(s) sem resultado final. "
+                "Volta a clicar depois de terminarem."
+            )
+        saved_results, created = _daily_save_results(
+            f"{target_day}_results.json", results_payload
+        )
+        predictions = pregame.get("predictions", [])
+        odds_rows = _daily_flatten_odds(
+            pregame.get("dunkapi_responses", []),
+            {str(g["game_id"]): {
+                "home_team": g["home_team"], "away_team": g["away_team"],
+                "starts_at": g["starts_at_utc"],
+            } for g in pregame.get("games", [])}
+        )
+        zip_bytes = _daily_zip_bytes(pregame, odds_rows, saved_results)
+        return (
+            f"NBA_LAB_PRO_{target_day}_COMPLETO.zip",
+            zip_bytes,
+            f"Resultados finais associados a {len(saved_results.get('results', []))} jogos. "
+            "A captura pré-jogo original foi preservada.",
+        )
+
+    # No completed pending report: capture the selected date once.
+    existing = _daily_read_json(f"{today_key}_pregame.json")
+    if existing is not None:
+        raise RuntimeError(
+            f"Já existe uma captura pré-jogo para {today_key}. "
+            "Ainda não há um relatório anterior pronto para atualizar com resultados."
+        )
+    if not current_games:
+        raise RuntimeError("Não há jogos carregados para a data selecionada.")
+
+    capture_moment = datetime.datetime.now(datetime.timezone.utc)
+    eligible_games = []
+    excluded_games = []
+    for game in current_games:
+        kickoff_check = datetime.datetime.fromtimestamp(
+            float(game["timestamp"]), tz=datetime.timezone.utc
+        )
+        if str(game.get("status", "NS")).upper() != "NS" or kickoff_check <= capture_moment:
+            excluded_games.append({
+                "game_id": str(game.get("id")),
+                "home_team": game.get("home"),
+                "away_team": game.get("away"),
+                "status": game.get("status"),
+                "reason": "Jogo já iniciado, terminado ou sem estado pré-jogo confirmado",
+            })
+        else:
+            eligible_games.append(game)
+    if not eligible_games:
+        raise RuntimeError(
+            "Não há jogos ainda por começar com estado pré-jogo confirmado. "
+            "Não vou criar previsões retroativas."
+        )
+
+    now_utc = capture_moment.isoformat()
+    predictions = _daily_build_predictions(eligible_games, now_utc)
+    games_saved = []
+    for game in eligible_games:
+        kickoff = datetime.datetime.fromtimestamp(float(game["timestamp"]), tz=datetime.timezone.utc)
+        games_saved.append({
+            "game_id": str(game["id"]),
+            "home_team": game["home"],
+            "away_team": game["away"],
+            "starts_at_utc": kickoff.isoformat(),
+            "game_date_et": kickoff.astimezone(__import__("zoneinfo").ZoneInfo("America/New_York")).date().isoformat(),
+            "game_date_portugal": kickoff.astimezone(__import__("zoneinfo").ZoneInfo("Europe/Lisbon")).date().isoformat(),
+            "status_at_capture": game.get("status"),
+        })
+    et_dates = [g["game_date_et"] for g in games_saved]
+    dunk_responses = _daily_fetch_dunk_odds(et_dates)
+    game_lookup = {
+        str(g["game_id"]): {
+            "home_team": g["home_team"], "away_team": g["away_team"],
+            "starts_at": g["starts_at_utc"],
+        } for g in games_saved
+    }
+    odds_rows = _daily_flatten_odds(dunk_responses, game_lookup)
+    pregame_payload = {
+        "report_date": today_key,
+        "captured_at_utc": now_utc,
+        "phase": "pregame",
+        "games": games_saved,
+        "excluded_games": excluded_games,
+        "predictions": predictions,
+        "dunkapi_query_dates_et": sorted(set(et_dates)),
+        "dunkapi_estimated_credits": 10 * len(set(et_dates)),
+        "dunkapi_responses": dunk_responses,
+    }
+    saved, created = _daily_create_json(f"{today_key}_pregame.json", pregame_payload)
+    if not created:
+        raise RuntimeError(
+            f"Já existia uma captura pré-jogo para {today_key}; não foi substituída."
+        )
+    zip_bytes = _daily_zip_bytes(saved, odds_rows)
+    return (
+        f"NBA_LAB_PRO_{today_key}_PREJOGO.zip",
+        zip_bytes,
+        f"Captura pré-jogo concluída: {len(games_saved)} jogos, "
+        f"{len(odds_rows)} registos de odds. Estimativa DunkAPI: "
+        f"{pregame_payload['dunkapi_estimated_credits']} créditos.",
+    )
+
+
+def _render_daily_report_button(day, day_games):
+    st.markdown("#### Relatório diário")
+    st.caption(
+        "Primeiro clique: captura pré-jogo M1/M2 + odds DunkAPI. "
+        "Num clique posterior, quando os jogos estiverem terminados, recolhe os resultados."
+    )
+    if st.button(
+        "📊 Preparar relatório diário",
+        key=f"prepare_daily_report_{day.isoformat()}",
+        use_container_width=True,
+        type="primary",
+    ):
+        try:
+            with st.spinner("A recolher previsões, odds e/ou resultados. Não feche a aplicação…"):
+                filename, content, message = _daily_report_action(day, day_games)
+            st.session_state["nba_daily_report_download"] = {
+                "filename": filename,
+                "content": content,
+                "message": message,
+            }
+            st.success(message)
+        except Exception as exc:
+            st.error(f"Não foi possível preparar o relatório: {exc}")
+
+    download = st.session_state.get("nba_daily_report_download")
+    if download:
+        st.download_button(
+            "⬇️ Descarregar ZIP do relatório",
+            data=download["content"],
+            file_name=download["filename"],
+            mime="application/zip",
+            key=f"download_{download['filename']}",
+            use_container_width=True,
+        )
+
+
 selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
 
 if active_page == "Ver calendário":
@@ -1506,6 +2065,7 @@ if active_page == "Ver calendário":
         with left:
             st.markdown('<div class="section-label">01 · Jogos</div>', unsafe_allow_html=True)
             st.date_input("Data dos jogos", value=selected_date, key="nba_matchday_widget", on_change=persist_matchday, format="DD/MM/YYYY")
+            _render_daily_report_button(selected_date, games)
             st.markdown(f'<div class="fixture-help">{selected_date.strftime("%A, %d %B %Y")} · {len(games)} jogo(s)</div>', unsafe_allow_html=True)
             if not API_KEY:
                 st.warning("Configura `API_SPORTS_NBA_KEY` nas Secrets.")
