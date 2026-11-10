@@ -2457,280 +2457,289 @@ with nav_area:
     _render_daily_report_button(selected_date, games, auto_capture_enabled=(active_page == 'Ver calendário'))
 
 
-selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
+def _render_calendar_analysis_fragment():
+    selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
+    left, right = st.columns([0.9, 2.1], gap="medium")
+    with left:
+        st.markdown('<div class="section-label">01 · Jogos</div>', unsafe_allow_html=True)
+        st.date_input("Data dos jogos", value=selected_date, key="nba_matchday_widget", on_change=persist_matchday, format="DD/MM/YYYY")
+        st.markdown(f'<div class="fixture-help">{selected_date.strftime("%A, %d %B %Y")} · {len(games)} jogo(s)</div>', unsafe_allow_html=True)
+        if not API_KEY:
+            st.warning("Configura `API_SPORTS_NBA_KEY` nas Secrets.")
+        elif not games:
+            if any("erro" in item for item in api_debug):
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #2A2112, #171B25);
+                    border: 1px solid #8A672D;
+                    border-radius: 12px;
+                    padding: 24px 16px;
+                    text-align: center;
+                    margin-top: 8px;
+                ">
+                    <div style="font-size:30px;margin-bottom:10px">⚠️</div>
+                    <div style="color:#F5D58A;font-size:17px;font-weight:750;margin-bottom:8px">
+                        Não foi possível carregar os jogos
+                    </div>
+                    <div style="color:#C3CBD5;font-size:13px;line-height:1.6">
+                        A API NBA não respondeu a tempo. Isto não significa que não existam jogos agendados.
+                        <br>O calendário mantém-se disponível; tenta novamente dentro de momentos.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #122337, #101B29);
+                    border: 1px solid #29445B;
+                    border-radius: 12px;
+                    padding: 28px 16px;
+                    text-align: center;
+                    margin-top: 8px;
+                ">
+                    <div style="font-size:32px;margin-bottom:12px">📅</div>
+                    <div style="color:#E5F1FC;font-size:18px;font-weight:700;margin-bottom:8px">
+                        Sem jogos agendados
+                    </div>
+                    <div style="color:#9CB2C8;font-size:13px;line-height:1.6">
+                        A API respondeu, mas não devolveu jogos para esta data.
+                        <br>Seleciona outro dia no calendário para consultar os jogos.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            # Compact rows; each button is one line when possible.
+            with st.container(height=455, border=False):
+                for game in games:
+                    is_selected = st.session_state.get("nba_selected_game") == game["id"]
+                    time_col, match_col = st.columns([0.23, 0.77], gap="small", vertical_alignment="center")
+                    with time_col:
+                        st.markdown(
+                            f'<div style="font-size:.72rem;font-weight:750;color:{"#55ddb0" if is_selected else "#8fa4ba"};text-align:center;padding:7px 0">{game["time"]}</div>',
+                            unsafe_allow_html=True
+                        )
+                    with match_col:
+                        st.markdown('<div class="game-button">', unsafe_allow_html=True)
+                        status = game.get("status", "NS")
+                        if status == "FT" and game.get("home_score") is not None and game.get("away_score") is not None:
+                            label = f"{game['away']} {game['away_score']} @ {game['home']} {game['home_score']} · FINAL"
+                        elif status in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
+                            label = f"🔴 {game['away']} @ {game['home']} · EM DIRETO"
+                        else:
+                            label = f"▸ **{game['away']} @ {game['home']}**" if is_selected else f"{game['away']} @ {game['home']}"
+                        if st.button(label, key=f"choose_{date_str}_{game['id']}",
+                                     type="primary" if is_selected else "secondary", use_container_width=True):
+                            st.session_state["nba_selected_game"] = game["id"]
+                            # On Streamlit versions without fragments, retain the original
+                            # full-rerun behaviour so the selected game's markets refresh.
+                            if not hasattr(st, "fragment"):
+                                st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="small-note">Seleciona qualquer jogo para atualizar os mercados à direita.</div>', unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="section-label">02 · Análise dos mercados</div>', unsafe_allow_html=True)
+        if not selected_game:
+            st.markdown('<div class="empty-state">Escolhe um jogo na lista à esquerda.<br>Os dois mercados aparecem aqui, lado a lado.</div>', unsafe_allow_html=True)
+        else:
+            home, away = selected_game["home"], selected_game["away"]
+            status_code = selected_game.get("status", "NS")
+            if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
+                status_label = f"FINAL · {selected_game['home_score']}–{selected_game['away_score']}"
+            elif status_code in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
+                status_label = "EM DIRETO"
+            else:
+                status_label = "PRÉ-JOGO"
+            st.markdown(f"""
+            <div class="match-header">
+              <div class="match-title">{away} <span style="color:#6c849b;font-weight:500">@</span> {home}</div>
+              <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">VISITANTE @ CASA</span> &nbsp; · &nbsp; <b>{status_label}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
+                final_home = int(selected_game["home_score"])
+                final_away = int(selected_game["away_score"])
+                final_total = final_home + final_away
+                st.markdown(f"""
+                <div class="final-score-panel">
+                  <div class="final-score-kicker">🏁 RESULTADO FINAL</div>
+                  <div class="final-score-teams">
+                    <div class="final-team"><span>{away}</span><strong>{final_away}</strong></div>
+                    <div class="final-vs">@</div>
+                    <div class="final-team"><span>{home}</span><strong>{final_home}</strong></div>
+                  </div>
+                  <div class="final-total">TOTAL DE PONTOS <strong>{final_total}</strong></div>
+                </div>
+                """, unsafe_allow_html=True)
+                saved_row = log_df[
+                    log_df["game_id"].map(normalize_game_id) == normalize_game_id(selected_game["id"])
+                ] if not log_df.empty else pd.DataFrame()
+                if not saved_row.empty:
+                    saved = saved_row.iloc[-1]
+
+                    def outcome_card(title, pick, result, detail=""):
+                        result_text = str(result or "Pendente")
+                        if result_text == "Acertou":
+                            css_class, icon_text = "won", "✓ ACERTOU"
+                        elif result_text == "Falhou":
+                            css_class, icon_text = "lost", "✕ FALHOU"
+                        elif result_text == "Push":
+                            css_class, icon_text = "push", "＝ PUSH"
+                        else:
+                            css_class, icon_text = "pending", "… PENDENTE"
+                        return f"""
+                        <div class="market-outcome {css_class}">
+                          <div class="outcome-heading">{title}</div>
+                          <div class="outcome-pick">{pick}</div>
+                          <div class="outcome-result">{icon_text}</div>
+                          <div class="outcome-detail">{detail}</div>
+                        </div>"""
+
+                    ml_pick = str(saved.get("moneyline_pick", "—"))
+                    ml_detail = f"Vencedor real: {home if final_home > final_away else away if final_away > final_home else 'Empate'}"
+                    total_pick = str(saved.get("total_pick", "—"))
+                    total_line_value = saved.get("total_line", "—")
+                    total_detail = f"Total real: {final_total} pts · Linha: {total_line_value}"
+                    outcome1 = outcome_card("MONEYLINE", f"Seleção: {ml_pick}", saved.get("moneyline_result", "Pendente"), ml_detail)
+                    outcome2 = outcome_card("OVER / UNDER", f"Seleção: {total_pick}", saved.get("total_result", "Pendente"), total_detail)
+                    out1, out2 = st.columns(2, gap="small")
+                    with out1:
+                        st.markdown(outcome1, unsafe_allow_html=True)
+                    with out2:
+                        st.markdown(outcome2, unsafe_allow_html=True)
+                else:
+                    st.info("O resultado final está disponível, mas não existe uma previsão congelada para este jogo. Não é possível classificar um acerto retroativamente.")
+
+            # MARKET 1: Moneyline
+            market1, market2 = st.columns(2, gap="small")
+            with market1:
+                st.markdown("""
+                <div class="market-card">
+                  <div class="market-kicker">Mercado 01 · Moneyline</div>
+                  <div class="market-title">🏆 Vencedor do jogo</div>
+                  <div class="market-desc">Probabilidade e odd teórica por equipa.</div>
+                </div>
+                """, unsafe_allow_html=True)
+                kickoff_m1 = pd.to_datetime(selected_game["timestamp"], unit="s", utc=True)
+                m1_error = None
+                try:
+                    m1_result = predict_moneyline_m1(home, away, kickoff_m1)
+                    p_home = float(m1_result["p_home_m1"])
+                    p_away = float(m1_result["p_away_m1"])
+                    if not (0.0 <= p_home <= 1.0 and 0.0 <= p_away <= 1.0):
+                        raise ValueError("M1 devolveu uma probabilidade fora de [0,1].")
+                    if abs((p_home + p_away) - 1.0) > 1e-9:
+                        raise ValueError("As probabilidades M1 não somam 100%.")
+                    fair_home, fair_away = 1 / p_home, 1 / p_away
+                except Exception as exc:
+                    p_home = p_away = fair_home = fair_away = None
+                    m1_error = str(exc)
+                if m1_error:
+                    st.error(f"M1 v1.1 indisponível: {m1_error}")
+                else:
+                    a, b = st.columns(2, gap="small")
+                    with a:
+                        st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
+                    with b:
+                        st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
+                # Load saved values per game so inputs survive page reloads and redeploys.
+                draft_for_game = load_market_drafts().get(normalize_game_id(selected_game["id"]), {})
+                default_home_odd = float(draft_for_game.get("home_market_odds", 1.95)) if pd.notna(draft_for_game.get("home_market_odds", 1.95)) else 1.95
+                default_away_odd = float(draft_for_game.get("away_market_odds", 1.95)) if pd.notna(draft_for_game.get("away_market_odds", 1.95)) else 1.95
+                default_total_line = float(draft_for_game.get("total_line", 220.5)) if pd.notna(draft_for_game.get("total_line", 220.5)) else 220.5
+                # Use native Streamlit labels so both inputs align and never overlap.
+                odds_home_col, odds_away_col = st.columns(2, gap="small")
+                with odds_home_col:
+                    market_odd_home = st.number_input(
+                        "Odd Casa", min_value=1.01, value=default_home_odd, step=0.05,
+                        help=f"Odd de mercado para {home}",
+                        key=f"market_odd_home_{selected_game['id']}"
+                    )
+                with odds_away_col:
+                    market_odd_away = st.number_input(
+                        "Odd Visitante", min_value=1.01, value=default_away_odd, step=0.05,
+                        help=f"Odd de mercado para {away}",
+                        key=f"market_odd_away_{selected_game['id']}"
+                    )
+                if fair_home is not None and fair_away is not None:
+                    edge_home = (market_odd_home / fair_home - 1) * 100
+                    edge_away = (market_odd_away / fair_away - 1) * 100
+                    edge_col1, edge_col2 = st.columns(2, gap="small")
+                    with edge_col1:
+                        if edge_home > 0:
+                            st.markdown(f'<div class="edge-box">EDGE · CASA <b style="float:right">+{edge_home:.1f}%</b></div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<div class="edge-box neutral">EDGE · CASA <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
+                    with edge_col2:
+                        if edge_away > 0:
+                            st.markdown(f'<div class="edge-box">EDGE · VISITANTE <b style="float:right">+{edge_away:.1f}%</b></div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<div class="edge-box neutral">EDGE · VISITANTE <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
+                else:
+                    st.info("Edge indisponível enquanto o M1 não conseguir atualizar o estado da época.")
+                st.caption("Probabilidades Moneyline produzidas pelo M1 v1.1; resultados anteriores ao dia do jogo atualizam o estado das equipas sem retreinar o classificador.")
+
+            # MARKET 2: Total points / Over Under
+            with market2:
+                st.markdown("""
+                <div class="market-card total">
+                  <div class="market-kicker">MOTOR PRINCIPAL · M2 HGB v1</div>
+                  <div class="market-title">🏀 Total de pontos · Over / Under</div>
+                  <div class="market-desc">Previsão M2 e probabilidades calculadas para cada linha.</div>
+                </div>
+                """, unsafe_allow_html=True)
+                over_line = st.number_input(
+                    "Linha para consulta (pontos)", min_value=150.0, max_value=300.0,
+                    value=default_total_line, step=0.5,
+                    key=f"total_line_{selected_game['id']}"
+                )
+                kickoff_utc = pd.to_datetime(selected_game["timestamp"], unit="s", utc=True)
+                m2_total, m2_error = predict_total(home, away, kickoff=kickoff_utc)
+                if m2_total is None:
+                    st.error(m2_error or "M2 indisponível. Não será apresentada uma estimativa alternativa.")
+                    total_reference = None
+                else:
+                    total_reference = m2_total
+                    p_over, p_under = probability_over(m2_total, over_line)
+                    st.metric("Total previsto — M2 HGB v1", f"{m2_total:.1f} pts")
+                    prob_col, under_col = st.columns(2, gap="small")
+                    with prob_col:
+                        st.metric("Probabilidade Over", f"{p_over*100:.1f}%", f"Odd justa {1/p_over:.2f}")
+                    with under_col:
+                        st.metric("Probabilidade Under", f"{p_under*100:.1f}%", f"Odd justa {1/p_under:.2f}")
+
+                    # Show the market ladder around the selected reference line.
+                    ladder_lines = [round(over_line + offset, 1) for offset in range(-7, 8)]
+                    ladder = []
+                    for line_value in ladder_lines:
+                        po, pu = probability_over(m2_total, line_value)
+                        ladder.append({"Linha": line_value, "Over": f"{po*100:.1f}%", "Under": f"{pu*100:.1f}%", "Odd justa Over": round(1/po, 2), "Odd justa Under": round(1/pu, 2)})
+                    st.caption("Escada de probabilidades M2 · linhas de 1 em 1 ponto em torno da linha selecionada")
+                    st.dataframe(pd.DataFrame(ladder), use_container_width=True, hide_index=True)
+                    gap = m2_total - over_line
+                    st.caption(f"Diferença entre previsão M2 e linha: {gap:+.1f} pontos · Distribuição Normal fixa · σ = 15,54")
+                    st.caption("M2 HGB v1 congelado · Treinado em 6.150 jogos até 2025 · forma 2026–27 incorporada nas features, sem retreino.")
+                    st.caption("Ridge legado: permanece no repositório, mas não é utilizado pela aplicação nem substitui o M2 em caso de erro.")
+
+            # Persist the values every time Streamlit reruns after an input change.
+            save_market_draft(selected_game["id"], market_odd_home, market_odd_away, over_line)
+
+            st.info("As odds e a linha de mercado são guardadas automaticamente quando alteras os campos. A previsão estatística é congelada separadamente a T−5 quando a aplicação executa uma atualização.")
+
+
+    st.markdown('<hr><div class="small-note">NBA LAB PRO · Moneyline mantém a implementação anterior. Motor principal de Total de Pontos: M2 HGB v1 congelado. Ridge legado não é chamado pela aplicação. Candidato em validação prospectiva; não assumir rentabilidade.</div>', unsafe_allow_html=True)
+
+
+
+# Streamlit fragments prevent game selection from rerunning the full app.
+# The fallback keeps compatibility with older Streamlit versions.
+if hasattr(st, "fragment"):
+    _render_calendar_analysis_fragment = st.fragment(_render_calendar_analysis_fragment)
 
 if active_page == "Ver calendário":
     with main_area:
-        left, right = st.columns([0.9, 2.1], gap="medium")
-        with left:
-            st.markdown('<div class="section-label">01 · Jogos</div>', unsafe_allow_html=True)
-            st.date_input("Data dos jogos", value=selected_date, key="nba_matchday_widget", on_change=persist_matchday, format="DD/MM/YYYY")
-            st.markdown(f'<div class="fixture-help">{selected_date.strftime("%A, %d %B %Y")} · {len(games)} jogo(s)</div>', unsafe_allow_html=True)
-            if not API_KEY:
-                st.warning("Configura `API_SPORTS_NBA_KEY` nas Secrets.")
-            elif not games:
-                if any("erro" in item for item in api_debug):
-                    st.markdown("""
-                    <div style="
-                        background: linear-gradient(135deg, #2A2112, #171B25);
-                        border: 1px solid #8A672D;
-                        border-radius: 12px;
-                        padding: 24px 16px;
-                        text-align: center;
-                        margin-top: 8px;
-                    ">
-                        <div style="font-size:30px;margin-bottom:10px">⚠️</div>
-                        <div style="color:#F5D58A;font-size:17px;font-weight:750;margin-bottom:8px">
-                            Não foi possível carregar os jogos
-                        </div>
-                        <div style="color:#C3CBD5;font-size:13px;line-height:1.6">
-                            A API NBA não respondeu a tempo. Isto não significa que não existam jogos agendados.
-                            <br>O calendário mantém-se disponível; tenta novamente dentro de momentos.
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown("""
-                    <div style="
-                        background: linear-gradient(135deg, #122337, #101B29);
-                        border: 1px solid #29445B;
-                        border-radius: 12px;
-                        padding: 28px 16px;
-                        text-align: center;
-                        margin-top: 8px;
-                    ">
-                        <div style="font-size:32px;margin-bottom:12px">📅</div>
-                        <div style="color:#E5F1FC;font-size:18px;font-weight:700;margin-bottom:8px">
-                            Sem jogos agendados
-                        </div>
-                        <div style="color:#9CB2C8;font-size:13px;line-height:1.6">
-                            A API respondeu, mas não devolveu jogos para esta data.
-                            <br>Seleciona outro dia no calendário para consultar os jogos.
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                # Compact rows; each button is one line when possible.
-                with st.container(height=455, border=False):
-                    for game in games:
-                        is_selected = st.session_state.get("nba_selected_game") == game["id"]
-                        time_col, match_col = st.columns([0.23, 0.77], gap="small", vertical_alignment="center")
-                        with time_col:
-                            st.markdown(
-                                f'<div style="font-size:.72rem;font-weight:750;color:{"#55ddb0" if is_selected else "#8fa4ba"};text-align:center;padding:7px 0">{game["time"]}</div>',
-                                unsafe_allow_html=True
-                            )
-                        with match_col:
-                            st.markdown('<div class="game-button">', unsafe_allow_html=True)
-                            status = game.get("status", "NS")
-                            if status == "FT" and game.get("home_score") is not None and game.get("away_score") is not None:
-                                label = f"{game['away']} {game['away_score']} @ {game['home']} {game['home_score']} · FINAL"
-                            elif status in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
-                                label = f"🔴 {game['away']} @ {game['home']} · EM DIRETO"
-                            else:
-                                label = f"▸ **{game['away']} @ {game['home']}**" if is_selected else f"{game['away']} @ {game['home']}"
-                            if st.button(label, key=f"choose_{date_str}_{game['id']}",
-                                         type="primary" if is_selected else "secondary", use_container_width=True):
-                                st.session_state["nba_selected_game"] = game["id"]
-                                st.rerun()
-                            st.markdown('</div>', unsafe_allow_html=True)
-            st.markdown('<div class="small-note">Seleciona qualquer jogo para atualizar os mercados à direita.</div>', unsafe_allow_html=True)
-        
-        with right:
-            st.markdown('<div class="section-label">02 · Análise dos mercados</div>', unsafe_allow_html=True)
-            if not selected_game:
-                st.markdown('<div class="empty-state">Escolhe um jogo na lista à esquerda.<br>Os dois mercados aparecem aqui, lado a lado.</div>', unsafe_allow_html=True)
-            else:
-                home, away = selected_game["home"], selected_game["away"]
-                status_code = selected_game.get("status", "NS")
-                if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
-                    status_label = f"FINAL · {selected_game['home_score']}–{selected_game['away_score']}"
-                elif status_code in ("LIVE", "Q1", "Q2", "Q3", "Q4", "HT", "OT"):
-                    status_label = "EM DIRETO"
-                else:
-                    status_label = "PRÉ-JOGO"
-                st.markdown(f"""
-                <div class="match-header">
-                  <div class="match-title">{away} <span style="color:#6c849b;font-weight:500">@</span> {home}</div>
-                  <div class="match-meta">📅 {selected_date.strftime("%d/%m/%Y")} &nbsp; · &nbsp; 🕒 {selected_game["time"]} (Portugal) &nbsp; · &nbsp; <span style="color:#68c4ff;font-weight:750">VISITANTE @ CASA</span> &nbsp; · &nbsp; <b>{status_label}</b></div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-                if status_code == "FT" and selected_game.get("home_score") is not None and selected_game.get("away_score") is not None:
-                    final_home = int(selected_game["home_score"])
-                    final_away = int(selected_game["away_score"])
-                    final_total = final_home + final_away
-                    st.markdown(f"""
-                    <div class="final-score-panel">
-                      <div class="final-score-kicker">🏁 RESULTADO FINAL</div>
-                      <div class="final-score-teams">
-                        <div class="final-team"><span>{away}</span><strong>{final_away}</strong></div>
-                        <div class="final-vs">@</div>
-                        <div class="final-team"><span>{home}</span><strong>{final_home}</strong></div>
-                      </div>
-                      <div class="final-total">TOTAL DE PONTOS <strong>{final_total}</strong></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    saved_row = log_df[
-                        log_df["game_id"].map(normalize_game_id) == normalize_game_id(selected_game["id"])
-                    ] if not log_df.empty else pd.DataFrame()
-                    if not saved_row.empty:
-                        saved = saved_row.iloc[-1]
-        
-                        def outcome_card(title, pick, result, detail=""):
-                            result_text = str(result or "Pendente")
-                            if result_text == "Acertou":
-                                css_class, icon_text = "won", "✓ ACERTOU"
-                            elif result_text == "Falhou":
-                                css_class, icon_text = "lost", "✕ FALHOU"
-                            elif result_text == "Push":
-                                css_class, icon_text = "push", "＝ PUSH"
-                            else:
-                                css_class, icon_text = "pending", "… PENDENTE"
-                            return f"""
-                            <div class="market-outcome {css_class}">
-                              <div class="outcome-heading">{title}</div>
-                              <div class="outcome-pick">{pick}</div>
-                              <div class="outcome-result">{icon_text}</div>
-                              <div class="outcome-detail">{detail}</div>
-                            </div>"""
-        
-                        ml_pick = str(saved.get("moneyline_pick", "—"))
-                        ml_detail = f"Vencedor real: {home if final_home > final_away else away if final_away > final_home else 'Empate'}"
-                        total_pick = str(saved.get("total_pick", "—"))
-                        total_line_value = saved.get("total_line", "—")
-                        total_detail = f"Total real: {final_total} pts · Linha: {total_line_value}"
-                        outcome1 = outcome_card("MONEYLINE", f"Seleção: {ml_pick}", saved.get("moneyline_result", "Pendente"), ml_detail)
-                        outcome2 = outcome_card("OVER / UNDER", f"Seleção: {total_pick}", saved.get("total_result", "Pendente"), total_detail)
-                        out1, out2 = st.columns(2, gap="small")
-                        with out1:
-                            st.markdown(outcome1, unsafe_allow_html=True)
-                        with out2:
-                            st.markdown(outcome2, unsafe_allow_html=True)
-                    else:
-                        st.info("O resultado final está disponível, mas não existe uma previsão congelada para este jogo. Não é possível classificar um acerto retroativamente.")
-        
-                # MARKET 1: Moneyline
-                market1, market2 = st.columns(2, gap="small")
-                with market1:
-                    st.markdown("""
-                    <div class="market-card">
-                      <div class="market-kicker">Mercado 01 · Moneyline</div>
-                      <div class="market-title">🏆 Vencedor do jogo</div>
-                      <div class="market-desc">Probabilidade e odd teórica por equipa.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    kickoff_m1 = pd.to_datetime(selected_game["timestamp"], unit="s", utc=True)
-                    m1_error = None
-                    try:
-                        m1_result = predict_moneyline_m1(home, away, kickoff_m1)
-                        p_home = float(m1_result["p_home_m1"])
-                        p_away = float(m1_result["p_away_m1"])
-                        if not (0.0 <= p_home <= 1.0 and 0.0 <= p_away <= 1.0):
-                            raise ValueError("M1 devolveu uma probabilidade fora de [0,1].")
-                        if abs((p_home + p_away) - 1.0) > 1e-9:
-                            raise ValueError("As probabilidades M1 não somam 100%.")
-                        fair_home, fair_away = 1 / p_home, 1 / p_away
-                    except Exception as exc:
-                        p_home = p_away = fair_home = fair_away = None
-                        m1_error = str(exc)
-                    if m1_error:
-                        st.error(f"M1 v1.1 indisponível: {m1_error}")
-                    else:
-                        a, b = st.columns(2, gap="small")
-                        with a:
-                            st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
-                        with b:
-                            st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
-                    # Load saved values per game so inputs survive page reloads and redeploys.
-                    draft_for_game = load_market_drafts().get(normalize_game_id(selected_game["id"]), {})
-                    default_home_odd = float(draft_for_game.get("home_market_odds", 1.95)) if pd.notna(draft_for_game.get("home_market_odds", 1.95)) else 1.95
-                    default_away_odd = float(draft_for_game.get("away_market_odds", 1.95)) if pd.notna(draft_for_game.get("away_market_odds", 1.95)) else 1.95
-                    default_total_line = float(draft_for_game.get("total_line", 220.5)) if pd.notna(draft_for_game.get("total_line", 220.5)) else 220.5
-                    # Use native Streamlit labels so both inputs align and never overlap.
-                    odds_home_col, odds_away_col = st.columns(2, gap="small")
-                    with odds_home_col:
-                        market_odd_home = st.number_input(
-                            "Odd Casa", min_value=1.01, value=default_home_odd, step=0.05,
-                            help=f"Odd de mercado para {home}",
-                            key=f"market_odd_home_{selected_game['id']}"
-                        )
-                    with odds_away_col:
-                        market_odd_away = st.number_input(
-                            "Odd Visitante", min_value=1.01, value=default_away_odd, step=0.05,
-                            help=f"Odd de mercado para {away}",
-                            key=f"market_odd_away_{selected_game['id']}"
-                        )
-                    if fair_home is not None and fair_away is not None:
-                        edge_home = (market_odd_home / fair_home - 1) * 100
-                        edge_away = (market_odd_away / fair_away - 1) * 100
-                        edge_col1, edge_col2 = st.columns(2, gap="small")
-                        with edge_col1:
-                            if edge_home > 0:
-                                st.markdown(f'<div class="edge-box">EDGE · CASA <b style="float:right">+{edge_home:.1f}%</b></div>', unsafe_allow_html=True)
-                            else:
-                                st.markdown('<div class="edge-box neutral">EDGE · CASA <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
-                        with edge_col2:
-                            if edge_away > 0:
-                                st.markdown(f'<div class="edge-box">EDGE · VISITANTE <b style="float:right">+{edge_away:.1f}%</b></div>', unsafe_allow_html=True)
-                            else:
-                                st.markdown('<div class="edge-box neutral">EDGE · VISITANTE <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
-                    else:
-                        st.info("Edge indisponível enquanto o M1 não conseguir atualizar o estado da época.")
-                    st.caption("Probabilidades Moneyline produzidas pelo M1 v1.1; resultados anteriores ao dia do jogo atualizam o estado das equipas sem retreinar o classificador.")
-        
-                # MARKET 2: Total points / Over Under
-                with market2:
-                    st.markdown("""
-                    <div class="market-card total">
-                      <div class="market-kicker">MOTOR PRINCIPAL · M2 HGB v1</div>
-                      <div class="market-title">🏀 Total de pontos · Over / Under</div>
-                      <div class="market-desc">Previsão M2 e probabilidades calculadas para cada linha.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    over_line = st.number_input(
-                        "Linha para consulta (pontos)", min_value=150.0, max_value=300.0,
-                        value=default_total_line, step=0.5,
-                        key=f"total_line_{selected_game['id']}"
-                    )
-                    kickoff_utc = pd.to_datetime(selected_game["timestamp"], unit="s", utc=True)
-                    m2_total, m2_error = predict_total(home, away, kickoff=kickoff_utc)
-                    if m2_total is None:
-                        st.error(m2_error or "M2 indisponível. Não será apresentada uma estimativa alternativa.")
-                        total_reference = None
-                    else:
-                        total_reference = m2_total
-                        p_over, p_under = probability_over(m2_total, over_line)
-                        st.metric("Total previsto — M2 HGB v1", f"{m2_total:.1f} pts")
-                        prob_col, under_col = st.columns(2, gap="small")
-                        with prob_col:
-                            st.metric("Probabilidade Over", f"{p_over*100:.1f}%", f"Odd justa {1/p_over:.2f}")
-                        with under_col:
-                            st.metric("Probabilidade Under", f"{p_under*100:.1f}%", f"Odd justa {1/p_under:.2f}")
-        
-                        # Show the market ladder around the selected reference line.
-                        ladder_lines = [round(over_line + offset, 1) for offset in range(-7, 8)]
-                        ladder = []
-                        for line_value in ladder_lines:
-                            po, pu = probability_over(m2_total, line_value)
-                            ladder.append({"Linha": line_value, "Over": f"{po*100:.1f}%", "Under": f"{pu*100:.1f}%", "Odd justa Over": round(1/po, 2), "Odd justa Under": round(1/pu, 2)})
-                        st.caption("Escada de probabilidades M2 · linhas de 1 em 1 ponto em torno da linha selecionada")
-                        st.dataframe(pd.DataFrame(ladder), use_container_width=True, hide_index=True)
-                        gap = m2_total - over_line
-                        st.caption(f"Diferença entre previsão M2 e linha: {gap:+.1f} pontos · Distribuição Normal fixa · σ = 15,54")
-                        st.caption("M2 HGB v1 congelado · Treinado em 6.150 jogos até 2025 · forma 2026–27 incorporada nas features, sem retreino.")
-                        st.caption("Ridge legado: permanece no repositório, mas não é utilizado pela aplicação nem substitui o M2 em caso de erro.")
-        
-                # Persist the values every time Streamlit reruns after an input change.
-                save_market_draft(selected_game["id"], market_odd_home, market_odd_away, over_line)
-        
-                st.info("As odds e a linha de mercado são guardadas automaticamente quando alteras os campos. A previsão estatística é congelada separadamente a T−5 quando a aplicação executa uma atualização.")
-        
-        
-        st.markdown('<hr><div class="small-note">NBA LAB PRO · Moneyline mantém a implementação anterior. Motor principal de Total de Pontos: M2 HGB v1 congelado. Ridge legado não é chamado pela aplicação. Candidato em validação prospectiva; não assumir rentabilidade.</div>', unsafe_allow_html=True)
-
-
-
+        _render_calendar_analysis_fragment()
 if active_page == "Adicionar aposta":
     with main_area:
         if st.session_state.pop("nba_bet_reset_form", False):
