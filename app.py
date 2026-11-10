@@ -1975,14 +1975,267 @@ def _daily_zip_bytes(pregame_payload, odds_rows, results_payload=None):
     return buffer.getvalue()
 
 
+
+def _daily_remove_json(filename):
+    """Remove only a temporary coordination file; never used for pre-game/results records."""
+    path = f"{DAILY_REPORT_DIR}/{filename}"
+    if github_configured():
+        repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+        branch = st.secrets.get("GITHUB_BRANCH", "main")
+        response = requests.get(
+            f"{GITHUB_API}/repos/{repo}/contents/{path}",
+            headers=github_read_headers(),
+            params={"ref": branch},
+            timeout=20,
+        )
+        if response.status_code == 404:
+            return
+        response.raise_for_status()
+        metadata = response.json()
+        delete_response = requests.delete(
+            f"{GITHUB_API}/repos/{repo}/contents/{path}",
+            headers=github_headers(),
+            json={
+                "message": f"Release NBA daily capture lock {filename}",
+                "sha": metadata["sha"],
+                "branch": branch,
+            },
+            timeout=20,
+        )
+        if delete_response.status_code not in (200, 204):
+            delete_response.raise_for_status()
+        return
+
+    local_path = Path(__file__).with_name(DAILY_REPORT_DIR) / filename
+    if local_path.exists():
+        local_path.unlink()
+
+
+def _daily_acquire_capture_lock(day_key):
+    """
+    Atomic create-only lock in GitHub/local storage.
+    A crashed process leaves a lock that expires after 20 minutes.
+    """
+    lock_name = f"{day_key}_capture.lock.json"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    existing = _daily_read_json(lock_name)
+    if existing:
+        try:
+            started = pd.to_datetime(existing.get("started_at_utc"), utc=True)
+            age_seconds = (pd.Timestamp(now) - started).total_seconds()
+        except Exception:
+            age_seconds = 0
+        if age_seconds < 20 * 60:
+            return False
+        _daily_remove_json(lock_name)
+
+    lock_payload = {
+        "report_date": day_key,
+        "started_at_utc": now.isoformat(),
+        "lock_id": str(uuid.uuid4()),
+    }
+    _, created = _daily_create_json(lock_name, lock_payload)
+    return bool(created)
+
+
+def _daily_capture_pregame(selected_day, current_games):
+    """Capture one selected Portuguese calendar date; immutable create-only archive."""
+    today_key = selected_day.isoformat()
+    filename = f"{today_key}_pregame.json"
+
+    # Existing snapshot always wins. Never refresh or overwrite it.
+    existing = _daily_read_json(filename)
+    if existing is not None:
+        return existing, False
+
+    if not current_games:
+        raise RuntimeError("Ainda não existem jogos carregados para esta data.")
+
+    if not _daily_acquire_capture_lock(today_key):
+        raise RuntimeError(
+            "A captura desta data já está a ser preparada noutra execução. "
+            "Aguarda alguns instantes e atualiza a página."
+        )
+
+    try:
+        capture_moment = datetime.datetime.now(datetime.timezone.utc)
+        eligible_games = []
+        excluded_games = []
+        for game in current_games:
+            kickoff_check = datetime.datetime.fromtimestamp(
+                float(game["timestamp"]), tz=datetime.timezone.utc
+            )
+            if str(game.get("status", "NS")).upper() != "NS" or kickoff_check <= capture_moment:
+                excluded_games.append({
+                    "game_id": str(game.get("id")),
+                    "home_team": game.get("home"),
+                    "away_team": game.get("away"),
+                    "status": game.get("status"),
+                    "reason": "Jogo já iniciado, terminado ou sem estado pré-jogo confirmado",
+                })
+            else:
+                eligible_games.append(game)
+
+        if not eligible_games:
+            raise RuntimeError(
+                "Não há jogos ainda por começar com estado pré-jogo confirmado. "
+                "Não foram criadas previsões retroativas."
+            )
+
+        now_utc = capture_moment.isoformat()
+        predictions = _daily_build_predictions(eligible_games, now_utc)
+        games_saved = []
+        for game in eligible_games:
+            kickoff = datetime.datetime.fromtimestamp(
+                float(game["timestamp"]), tz=datetime.timezone.utc
+            )
+            games_saved.append({
+                "game_id": str(game["id"]),
+                "home_team": game["home"],
+                "away_team": game["away"],
+                "starts_at_utc": kickoff.isoformat(),
+                "game_date_et": kickoff.astimezone(
+                    __import__("zoneinfo").ZoneInfo("America/New_York")
+                ).date().isoformat(),
+                "game_date_portugal": kickoff.astimezone(
+                    __import__("zoneinfo").ZoneInfo("Europe/Lisbon")
+                ).date().isoformat(),
+                "status_at_capture": game.get("status"),
+            })
+
+        et_dates = [g["game_date_et"] for g in games_saved]
+        dunk_responses = _daily_fetch_dunk_odds(et_dates)
+        game_lookup = {
+            str(g["game_id"]): {
+                "home_team": g["home_team"],
+                "away_team": g["away_team"],
+                "starts_at": g["starts_at_utc"],
+            }
+            for g in games_saved
+        }
+        odds_rows = _daily_flatten_odds(dunk_responses, game_lookup)
+
+        # Fail closed if the odds response cannot be associated with all games.
+        odds_game_ids = {
+            str(row.get("game_id"))
+            for row in odds_rows
+            if str(row.get("game_id") or "").strip()
+        }
+        missing_odds_games = [
+            g["game_id"] for g in games_saved
+            if g["game_id"] not in odds_game_ids
+        ]
+        pregame_payload = {
+            "report_date": today_key,
+            "captured_at_utc": now_utc,
+            "phase": "pregame",
+            "games": games_saved,
+            "excluded_games": excluded_games,
+            "predictions": predictions,
+            "dunkapi_query_dates_et": sorted(set(et_dates)),
+            "dunkapi_estimated_credits": 10 * len(set(et_dates)),
+            "dunkapi_responses": dunk_responses,
+            "odds_association": {
+                "matched_game_ids": sorted(odds_game_ids),
+                "games_without_matched_odds": missing_odds_games,
+                "all_games_have_odds": len(missing_odds_games) == 0,
+            },
+        }
+        saved, created = _daily_create_json(filename, pregame_payload)
+        if not created:
+            # Another process completed first; the already-persisted snapshot is authoritative.
+            return saved, False
+        return saved, True
+    finally:
+        _daily_remove_json(f"{today_key}_capture.lock.json")
+
+
+def _daily_pregame_zip(pregame_payload):
+    lookup = {
+        str(g["game_id"]): {
+            "home_team": g["home_team"],
+            "away_team": g["away_team"],
+            "starts_at": g["starts_at_utc"],
+        }
+        for g in pregame_payload.get("games", [])
+    }
+    odds_rows = _daily_flatten_odds(
+        pregame_payload.get("dunkapi_responses", []), lookup
+    )
+    return _daily_zip_bytes(pregame_payload, odds_rows)
+
+
+def _daily_auto_capture_status(day, day_games, enabled=True):
+    """
+    Idempotent automatic first-entry capture.
+    Streamlit reruns are harmless after the immutable pre-game JSON exists.
+    """
+    day_key = day.isoformat()
+    pregame = _daily_read_json(f"{day_key}_pregame.json")
+    if pregame is not None:
+        results = _daily_read_json(f"{day_key}_results.json")
+        return "complete" if results and results.get("all_games_resolved") else "waiting"
+
+    if not enabled:
+        return "not_checked"
+
+    attempted_key = st.session_state.get("nba_daily_auto_attempted_date")
+    if attempted_key == day_key:
+        return st.session_state.get("nba_daily_auto_status", "error")
+
+    if not day_games:
+        return "no_games_yet"
+
+    # Do not automatically capture an old date after all its games have started.
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    has_eligible = any(
+        str(g.get("status", "NS")).upper() == "NS"
+        and datetime.datetime.fromtimestamp(
+            float(g["timestamp"]), tz=datetime.timezone.utc
+        ) > now_utc
+        for g in day_games
+    )
+    if not has_eligible:
+        st.session_state["nba_daily_auto_attempted_date"] = day_key
+        st.session_state["nba_daily_auto_status"] = "missed_window"
+        return "missed_window"
+
+    # Latch before doing external work so a rerun cannot fire a second request.
+    st.session_state["nba_daily_auto_attempted_date"] = day_key
+    st.session_state["nba_daily_auto_status"] = "capturing"
+    try:
+        with st.spinner("Primeira entrada nesta data: a capturar previsões M1/M2 e odds DunkAPI…"):
+            pregame, created = _daily_capture_pregame(day, day_games)
+            st.session_state["nba_daily_auto_status"] = "waiting"
+            st.session_state["nba_daily_auto_report_date"] = day_key
+            st.session_state["nba_daily_report_download"] = {
+                "filename": f"NBA_LAB_PRO_{day_key}_PREJOGO.zip",
+                "content": _daily_pregame_zip(pregame),
+                "message": (
+                    "Captura pré-jogo automática concluída."
+                    if created else "A captura pré-jogo desta data já existia."
+                ),
+            }
+        return "waiting"
+    except Exception as exc:
+        st.session_state["nba_daily_auto_status"] = "error"
+        st.session_state["nba_daily_auto_error"] = str(exc)
+        return "error"
+
+
+
 def _daily_report_action(selected_day, current_games):
     """Single button state machine: capture first; on a later click, resolve a completed pending day."""
     today_key = selected_day.isoformat()
     pending_days = _daily_list_pending_reports()
 
-    # Prefer an older pending report that is now fully final; this supports the next-day click.
+    # Resolve the selected day first. If it has no pending capture, fall back to
+    # the most recent older pending day so missed result updates can still be recovered.
     candidate_days = [d for d in pending_days if d <= today_key]
-    target_day = candidate_days[0] if candidate_days else None
+    target_day = (
+        today_key if today_key in candidate_days
+        else (candidate_days[-1] if candidate_days else None)
+    )
 
     if target_day:
         pregame = _daily_read_json(f"{target_day}_pregame.json")
@@ -2094,32 +2347,101 @@ def _daily_report_action(selected_day, current_games):
     )
 
 
-def _render_daily_report_button(day, day_games):
-    st.caption(
-        "Captura pré-jogo M1/M2 e odds; depois atualiza os resultados finais."
-    )
-    if st.button(
-        "📊 Preparar relatório",
-        key=f"prepare_daily_report_{day.isoformat()}",
-        use_container_width=True,
-        type="primary",
-    ):
-        try:
-            with st.spinner("A recolher previsões, odds e/ou resultados. Não feche a aplicação…"):
-                filename, content, message = _daily_report_action(day, day_games)
+def _render_daily_report_button(day, day_games, auto_capture_enabled=True):
+    status = _daily_auto_capture_status(day, day_games, enabled=auto_capture_enabled)
+
+    st.caption("A captura pré-jogo é automática na primeira entrada em cada data.")
+    if status == "waiting":
+        st.success("⏳ AGUARDAR RESULTADOS · Captura pré-jogo guardada")
+    elif status == "complete":
+        st.success("✅ RELATÓRIO COMPLETO · Resultados atualizados")
+    elif status == "capturing":
+        st.info("A preparar a captura pré-jogo…")
+    elif status == "no_games_yet":
+        st.info("À espera dos jogos da API para esta data.")
+    elif status == "missed_window":
+        st.warning(
+            "Não foi feita captura automática: os jogos já tinham começado "
+            "ou não estavam confirmados como pré-jogo."
+        )
+    elif status == "error":
+        st.error(
+            "A captura automática não foi concluída: "
+            + str(st.session_state.get("nba_daily_auto_error", "erro não especificado"))
+        )
+        if st.button(
+            "↻ Tentar captura novamente",
+            key=f"retry_daily_capture_{day.isoformat()}",
+            use_container_width=True,
+        ):
+            st.session_state.pop("nba_daily_auto_attempted_date", None)
+            st.session_state.pop("nba_daily_auto_status", None)
+            st.session_state.pop("nba_daily_auto_error", None)
+            st.rerun()
+
+    pregame_exists = _daily_read_json(f"{day.isoformat()}_pregame.json") is not None
+    results_exist = _daily_read_json(f"{day.isoformat()}_results.json") is not None
+
+    # Manual action is now only for result reconciliation; it never starts a new pre-game capture.
+    if pregame_exists and not results_exist:
+        if st.button(
+            "🔄 Atualizar resultados",
+            key=f"update_daily_results_{day.isoformat()}",
+            use_container_width=True,
+            type="primary",
+        ):
+            try:
+                with st.spinner("A consultar os resultados dos jogos…"):
+                    filename, content, message = _daily_report_action(day, day_games)
+                st.session_state["nba_daily_report_download"] = {
+                    "filename": filename,
+                    "content": content,
+                    "message": message,
+                }
+                st.success(message)
+                st.session_state["nba_daily_auto_status"] = "complete"
+            except Exception as exc:
+                st.warning(str(exc))
+
+    # A pre-game ZIP is made available automatically, including after a new session starts.
+    download = st.session_state.get("nba_daily_report_download")
+    if pregame_exists and (not download or download.get("filename") != f"NBA_LAB_PRO_{day.isoformat()}_PREJOGO.zip"):
+        pregame = _daily_read_json(f"{day.isoformat()}_pregame.json")
+        if pregame:
             st.session_state["nba_daily_report_download"] = {
-                "filename": filename,
-                "content": content,
-                "message": message,
+                "filename": f"NBA_LAB_PRO_{day.isoformat()}_PREJOGO.zip",
+                "content": _daily_pregame_zip(pregame),
+                "message": "ZIP pré-jogo reconstruído a partir da captura guardada.",
             }
-            st.success(message)
-        except Exception as exc:
-            st.error(f"Não foi possível preparar o relatório: {exc}")
+            download = st.session_state["nba_daily_report_download"]
+
+    # Completed ZIP is reconstructed from the immutable pre-game + results files when needed.
+    if results_exist:
+        pregame = _daily_read_json(f"{day.isoformat()}_pregame.json")
+        results_payload = _daily_read_json(f"{day.isoformat()}_results.json")
+        if pregame and results_payload:
+            odds_lookup = {
+                str(g["game_id"]): {
+                    "home_team": g["home_team"],
+                    "away_team": g["away_team"],
+                    "starts_at": g["starts_at_utc"],
+                }
+                for g in pregame.get("games", [])
+            }
+            odds_rows = _daily_flatten_odds(pregame.get("dunkapi_responses", []), odds_lookup)
+            st.session_state["nba_daily_report_download"] = {
+                "filename": f"NBA_LAB_PRO_{day.isoformat()}_COMPLETO.zip",
+                "content": _daily_zip_bytes(pregame, odds_rows, results_payload),
+                "message": "Relatório completo reconstruído a partir dos registos guardados.",
+            }
+            download = st.session_state["nba_daily_report_download"]
 
     download = st.session_state.get("nba_daily_report_download")
-    if download:
+    if download and (
+        download.get("filename", "").startswith(f"NBA_LAB_PRO_{day.isoformat()}_")
+    ):
         st.download_button(
-            "⬇️ Descarregar ZIP",
+            "⬇️ Descarregar ZIP " + ("COMPLETO" if "COMPLETO" in download["filename"] else "PRÉ-JOGO"),
             data=download["content"],
             file_name=download["filename"],
             mime="application/zip",
@@ -2132,7 +2454,7 @@ def _render_daily_report_button(day, day_games):
 with nav_area:
     st.markdown("---")
     st.markdown("#### RELATÓRIOS")
-    _render_daily_report_button(selected_date, games)
+    _render_daily_report_button(selected_date, games, auto_capture_enabled=(active_page == 'Ver calendário'))
 
 
 selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
