@@ -88,12 +88,9 @@ def github_headers():
     }
 
 def github_read_headers():
-    # O repositório é público: leituras usam API pública sem token.
-    # O token fica reservado às operações que alteram o repositório.
-    return {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+    # Autenticar também as leituras para usar o limite superior da API GitHub.
+    # O token está guardado apenas nos Secrets da Streamlit Cloud.
+    return github_headers()
 
 def github_get_branch_head():
     repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
