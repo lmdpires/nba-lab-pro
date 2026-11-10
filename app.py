@@ -92,6 +92,44 @@ def github_read_headers():
     # O token está guardado apenas nos Secrets da Streamlit Cloud.
     return github_headers()
 
+
+def github_diagnose_access():
+    """Diagnóstico seguro: devolve estados HTTP e utilizador, nunca credenciais."""
+    if not github_configured():
+        return "Secrets: GITHUB_TOKEN ou GITHUB_REPOSITORY em falta."
+
+    repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    headers = github_headers()
+    checks = [
+        ("Identidade do token", f"{GITHUB_API}/user"),
+        ("Acesso ao repositório", f"{GITHUB_API}/repos/{repo}"),
+        ("Acesso à branch", f"{GITHUB_API}/repos/{repo}/git/ref/heads/{branch}"),
+    ]
+    results = [f"Repositório configurado: {repo}", f"Branch configurada: {branch}"]
+    for label, url in checks:
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            detail = ""
+            if response.status_code == 200:
+                try:
+                    payload = response.json()
+                    if label == "Identidade do token":
+                        detail = f" (conta: {payload.get('login', 'não identificada')})"
+                    elif label == "Acesso ao repositório":
+                        detail = f" (repositório: {payload.get('full_name', 'não identificado')})"
+                except Exception:
+                    pass
+            elif response.status_code in (401, 403, 404):
+                try:
+                    detail = f" ({response.json().get('message', 'sem detalhe')})"
+                except Exception:
+                    pass
+            results.append(f"{label}: HTTP {response.status_code}{detail}")
+        except Exception as exc:
+            results.append(f"{label}: erro de ligação ({type(exc).__name__})")
+    return "\\n".join(results)
+
 def github_get_branch_head():
     repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
     branch = st.secrets.get("GITHUB_BRANCH", "main")
@@ -221,10 +259,11 @@ def sync_bet_csvs_from_github():
         SLIP_PATH.write_bytes(slips_content)
         LEG_PATH.write_bytes(legs_content)
     except Exception as exc:
+        diagnostic = github_diagnose_access()
         st.error(
             "Não foi possível confirmar a leitura do histórico persistente no GitHub. "
             "Por segurança, a aplicação não deve continuar a gravar apostas até resolvermos o problema. "
-            f"Detalhe: {exc}"
+            f"Detalhe: {exc}\\n\\nDiagnóstico de acesso (sem credenciais):\\n{diagnostic}"
         )
         st.stop()
 
@@ -274,10 +313,11 @@ def save_slip_data(slips, legs):
         SLIP_PATH.write_bytes(slips_csv)
         LEG_PATH.write_bytes(legs_csv)
     except Exception as exc:
+        diagnostic = github_diagnose_access()
         st.error(
             "Falha ao guardar as apostas no GitHub. Os ficheiros persistentes não foram "
             "atualizados; não considere esta operação concluída. "
-            f"Detalhe: {exc}"
+            f"Detalhe: {exc}\\n\\nDiagnóstico de acesso (sem credenciais):\\n{diagnostic}"
         )
         st.stop()
 
