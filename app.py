@@ -2458,7 +2458,6 @@ with nav_area:
 
 
 def _render_calendar_analysis_fragment():
-    selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
     left, right = st.columns([0.9, 2.1], gap="medium")
     with left:
         st.markdown('<div class="section-label">01 · Jogos</div>', unsafe_allow_html=True)
@@ -2530,12 +2529,26 @@ def _render_calendar_analysis_fragment():
                         if st.button(label, key=f"choose_{date_str}_{game['id']}",
                                      type="primary" if is_selected else "secondary", use_container_width=True):
                             st.session_state["nba_selected_game"] = game["id"]
-                            # On Streamlit versions without fragments, retain the original
-                            # full-rerun behaviour so the selected game's markets refresh.
-                            if not hasattr(st, "fragment"):
+                            # Re-render this fragment once with the newly selected game.
+                            # This updates both the selected-row styling and the markets panel.
+                            if hasattr(st, "fragment"):
+                                try:
+                                    st.rerun(scope="fragment")
+                                except TypeError:
+                                    # Compatibility with Streamlit versions that have
+                                    # fragments but do not support fragment-scoped reruns.
+                                    st.rerun()
+                            else:
                                 st.rerun()
                         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('<div class="small-note">Seleciona qualquer jogo para atualizar os mercados à direita.</div>', unsafe_allow_html=True)
+
+    # Resolve the selection after processing the clicked button. Computing it at
+    # fragment start left the previous game selected during the first click.
+    selected_game = next(
+        (g for g in games if g["id"] == st.session_state.get("nba_selected_game")),
+        None
+    )
 
     with right:
         st.markdown('<div class="section-label">02 · Análise dos mercados</div>', unsafe_allow_html=True)
