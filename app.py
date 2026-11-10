@@ -1,4 +1,5 @@
 import datetime
+import copy
 import uuid
 import io
 import zipfile
@@ -8,6 +9,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from nba_over_m2_live import predict_total, probability_over
+from nba_moneyline_m1_live import M1Live, parse_api_sports_payload, api_season_query
 
 st.set_page_config(page_title="NBA LAB PRO", page_icon="🏀", layout="wide")
 
@@ -582,10 +584,14 @@ def save_market_draft(game_id, home_odd, away_odd, total_line):
     ]).to_csv(MARKET_DRAFT_PATH, index=False)
 
 def model_snapshot(home, away, kickoff=None):
-    """Moneyline remains unchanged; total uses the frozen M2 HGB model only."""
-    factor = (len(home) + len(away) * 3) % 10
-    p_home = min(0.90, max(0.10, 0.54 + factor * 0.015))
-    p_away = 1 - p_home
+    """Frozen model snapshot: M1 v1.1 for Moneyline + unchanged M2 HGB v1 total."""
+    try:
+        m1_result = predict_moneyline_m1(home, away, kickoff)
+        p_home = float(m1_result["p_home_m1"])
+        p_away = float(m1_result["p_away_m1"])
+    except Exception:
+        # Fail closed: never substitute the old demonstrative Moneyline formula.
+        p_home, p_away = None, None
     total_reference, m2_error = predict_total(home, away, kickoff=kickoff)
     return p_home, p_away, total_reference
 
@@ -639,6 +645,8 @@ def recover_predictions_from_saved_drafts(games, log_df, drafts, now=None):
             continue
         home, away = game["home"], game["away"]
         p_home, p_away, total_reference = model_snapshot(home, away, kickoff=kickoff)
+        if p_home is None or p_away is None:
+            continue
         try:
             home_odd = float(draft.get("home_market_odds"))
             away_odd = float(draft.get("away_market_odds"))
@@ -656,7 +664,7 @@ def recover_predictions_from_saved_drafts(games, log_df, drafts, now=None):
             "start_time": kickoff.strftime("%H:%M"),
             "freeze_at": (kickoff - datetime.timedelta(minutes=5)).isoformat(timespec="seconds"),
             "away_team": away, "home_team": home,
-            "model_label": "Moneyline demonstrativo; Total M2 HGB v1 congelado" if total_reference is not None else "Moneyline demonstrativo; M2 indisponível",
+            "model_label": "M1 v1.1 Moneyline; M2 HGB v1 congelado" if total_reference is not None else "M1 v1.1 Moneyline; M2 indisponível",
             "capture_mode": "Recuperado de inputs pré-jogo",
             "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
             "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
@@ -719,7 +727,7 @@ def upsert_api_results(games, log_df):
     return log_df, changed
 
 def auto_freeze_predictions(games, log_df, now=None):
-    """Freeze a demo snapshot at T-5 when the app is running / refreshed."""
+    """Freeze an M1 v1.1 + M2 HGB v1 snapshot at T-5 when the app is active."""
     now = now or datetime.datetime.now().astimezone()
     if log_df.empty:
         existing_ids = set()
@@ -739,6 +747,9 @@ def auto_freeze_predictions(games, log_df, now=None):
             continue
         home, away = game["home"], game["away"]
         p_home, p_away, total_reference = model_snapshot(home, away, kickoff=kickoff)
+        if p_home is None or p_away is None:
+            # Do not freeze an incomplete or demonstrative Moneyline snapshot.
+            continue
         # No bookmaker odds feed is assumed here. Odds are deliberately left blank.
         # 220.5 is a technical reference only, never represented as a bookmaker quote.
         total_line = 220.5 if total_reference is not None else None
@@ -751,7 +762,7 @@ def auto_freeze_predictions(games, log_df, now=None):
             "start_time": kickoff.strftime("%H:%M"),
             "freeze_at": freeze_at.isoformat(timespec="seconds"),
             "away_team": away, "home_team": home,
-            "model_label": "Moneyline demonstrativo; Total M2 HGB v1 congelado" if total_reference is not None else "Moneyline demonstrativo; M2 indisponível",
+            "model_label": "M1 v1.1 Moneyline; M2 HGB v1 congelado" if total_reference is not None else "M1 v1.1 Moneyline; M2 indisponível",
             "capture_mode": "Automático após T-5 (app ativa)",
             "moneyline_pick": "Casa" if p_home >= p_away else "Fora",
             "p_home": round(float(p_home), 4), "p_away": round(float(p_away), 4),
@@ -1120,6 +1131,74 @@ try:
 except Exception:
     API_KEY = ""
 
+@st.cache_resource(show_spinner=False)
+def load_m1_base_engine(history_path, history_mtime):
+    """Train M1 once from the validated 2021-2025 history and retain its initial state."""
+    return M1Live(history_path)
+
+@st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
+def fetch_m1_full_season(season_start_year, api_key):
+    """Fetch the complete current NBA season once; results are filtered locally by ET day."""
+    try:
+        response = requests.get(
+            "https://v2.nba.api-sports.io/games",
+            headers={"x-apisports-key": api_key},
+            params=api_season_query(int(season_start_year)),
+            timeout=(5, 20),
+        )
+        if response.status_code != 200:
+            return None, f"HTTP {response.status_code}: {response.text[:180]}"
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("errors"):
+            return None, f"Resposta API-Sports inválida: {(payload or {}).get('errors', 'payload inválido')}"
+        if not isinstance(payload.get("response"), list):
+            return None, "Resposta API-Sports sem lista de jogos."
+        return payload, None
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        return None, str(exc)
+
+def predict_moneyline_m1(home, away, kickoff):
+    """Predict with a fresh same-day M1 state, applying only earlier ET-day regular-season finals."""
+    if not API_KEY:
+        raise RuntimeError("Chave API_SPORTS_NBA_KEY não configurada; M1 live indisponível.")
+    if kickoff is None:
+        raise RuntimeError("Data/hora do jogo indisponível para calcular M1.")
+    kickoff_ts = pd.Timestamp(kickoff)
+    if kickoff_ts.tzinfo is None:
+        raise RuntimeError("A data/hora do jogo não contém fuso horário.")
+    target_day = kickoff_ts.tz_convert("America/New_York").date()
+    season_start_year = target_day.year if target_day.month >= 10 else target_day.year - 1
+    history_path = str(Path(__file__).with_name("nba_games_history.csv"))
+    if not Path(history_path).exists():
+        raise RuntimeError("Ficheiro nba_games_history.csv não encontrado.")
+    baseline = load_m1_base_engine(history_path, Path(history_path).stat().st_mtime)
+    payload, api_error = fetch_m1_full_season(season_start_year, API_KEY)
+    if api_error or payload is None:
+        raise RuntimeError(f"Não foi possível atualizar o estado M1 da época {season_start_year}: {api_error}")
+    season_games = parse_api_sports_payload(payload, baseline)
+    # The 2026-27 regular season began on 20 October 2026. Exclude preseason and
+    # never apply games from the target ET date or later (same-day leakage guard).
+    regular_start = datetime.date(season_start_year, 10, 20)
+    regular_end = datetime.date(season_start_year + 1, 4, 11) if season_start_year == 2026 else None
+    # The 2026 Emirates NBA Cup Championship (11 Dec) is excluded from standings
+    # and therefore must not update the M1 team state; other Cup games count.
+    cup_final_days = {datetime.date(2026, 12, 11)} if season_start_year == 2026 else set()
+    eligible = []
+    for game in season_games:
+        game_day = baseline._day(game.date)
+        if game_day < regular_start or game_day >= target_day:
+            continue
+        if regular_end is not None and game_day > regular_end:
+            continue
+        if game_day in cup_final_days:
+            continue
+        if str(game.status).lower() in {"final", "finished", "completed", "3"}:
+            eligible.append(game)
+    engine = copy.deepcopy(baseline)
+    if eligible:
+        engine.apply_completed_games(eligible)
+    return engine.predict(kickoff_ts, home, away)
+
 @st.cache_data(ttl=90, show_spinner=False)
 def fetch_nba_api_date(api_date_str, season, api_key):
     """Fetch one NBA date once per short cache window; fail fast if API-Sports stalls."""
@@ -1374,7 +1453,7 @@ slips_df, legs_df, reconciled_slips = reconcile_slips(slips_df, legs_df, result_
 if migrated_slips or reconciled_slips:
     save_slip_data(slips_df, legs_df)
 
-# Automatic prediction freeze and result reconciliation. Runs whenever the app reruns.
+# Automatic M1/M2 prediction freeze and result reconciliation. Runs whenever the app reruns.
 log_df, new_snapshots = auto_freeze_predictions(games, log_df)
 # Keep the statistical forecast immutable: total_line=220.5 is a fixed
 # reference line for model evaluation. User-selected market lines stay in drafts
@@ -1582,15 +1661,28 @@ if active_page == "Ver calendário":
                       <div class="market-desc">Probabilidade e odd teórica por equipa.</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    factor = (len(home) + len(away) * 3) % 10
-                    p_home = min(0.90, max(0.10, 0.54 + factor * 0.015))
-                    p_away = 1 - p_home
-                    fair_home, fair_away = 1 / p_home, 1 / p_away
-                    a, b = st.columns(2, gap="small")
-                    with a:
-                        st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
-                    with b:
-                        st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
+                    kickoff_m1 = pd.to_datetime(selected_game["timestamp"], unit="s", utc=True)
+                    m1_error = None
+                    try:
+                        m1_result = predict_moneyline_m1(home, away, kickoff_m1)
+                        p_home = float(m1_result["p_home_m1"])
+                        p_away = float(m1_result["p_away_m1"])
+                        if not (0.0 <= p_home <= 1.0 and 0.0 <= p_away <= 1.0):
+                            raise ValueError("M1 devolveu uma probabilidade fora de [0,1].")
+                        if abs((p_home + p_away) - 1.0) > 1e-9:
+                            raise ValueError("As probabilidades M1 não somam 100%.")
+                        fair_home, fair_away = 1 / p_home, 1 / p_away
+                    except Exception as exc:
+                        p_home = p_away = fair_home = fair_away = None
+                        m1_error = str(exc)
+                    if m1_error:
+                        st.error(f"M1 v1.1 indisponível: {m1_error}")
+                    else:
+                        a, b = st.columns(2, gap="small")
+                        with a:
+                            st.metric(f"Casa · {home}", f"{p_home*100:.1f}%", f"Odd justa {fair_home:.2f}")
+                        with b:
+                            st.metric(f"Visitante · {away}", f"{p_away*100:.1f}%", f"Odd justa {fair_away:.2f}")
                     # Load saved values per game so inputs survive page reloads and redeploys.
                     draft_for_game = load_market_drafts().get(normalize_game_id(selected_game["id"]), {})
                     default_home_odd = float(draft_for_game.get("home_market_odds", 1.95)) if pd.notna(draft_for_game.get("home_market_odds", 1.95)) else 1.95
@@ -1610,20 +1702,23 @@ if active_page == "Ver calendário":
                             help=f"Odd de mercado para {away}",
                             key=f"market_odd_away_{selected_game['id']}"
                         )
-                    edge_home = (market_odd_home / fair_home - 1) * 100
-                    edge_away = (market_odd_away / fair_away - 1) * 100
-                    edge_col1, edge_col2 = st.columns(2, gap="small")
-                    with edge_col1:
-                        if edge_home > 0:
-                            st.markdown(f'<div class="edge-box">EDGE · CASA <b style="float:right">+{edge_home:.1f}%</b></div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown('<div class="edge-box neutral">EDGE · CASA <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
-                    with edge_col2:
-                        if edge_away > 0:
-                            st.markdown(f'<div class="edge-box">EDGE · VISITANTE <b style="float:right">+{edge_away:.1f}%</b></div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown('<div class="edge-box neutral">EDGE · VISITANTE <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
-                    st.caption("Introduz cada odd no campo da equipa correspondente. Estimativas demonstrativas, não validadas com dados históricos.")
+                    if fair_home is not None and fair_away is not None:
+                        edge_home = (market_odd_home / fair_home - 1) * 100
+                        edge_away = (market_odd_away / fair_away - 1) * 100
+                        edge_col1, edge_col2 = st.columns(2, gap="small")
+                        with edge_col1:
+                            if edge_home > 0:
+                                st.markdown(f'<div class="edge-box">EDGE · CASA <b style="float:right">+{edge_home:.1f}%</b></div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown('<div class="edge-box neutral">EDGE · CASA <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
+                        with edge_col2:
+                            if edge_away > 0:
+                                st.markdown(f'<div class="edge-box">EDGE · VISITANTE <b style="float:right">+{edge_away:.1f}%</b></div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown('<div class="edge-box neutral">EDGE · VISITANTE <b style="float:right">Sem vantagem</b></div>', unsafe_allow_html=True)
+                    else:
+                        st.info("Edge indisponível enquanto o M1 não conseguir atualizar o estado da época.")
+                    st.caption("Probabilidades Moneyline produzidas pelo M1 v1.1; resultados anteriores ao dia do jogo atualizam o estado das equipas sem retreinar o classificador.")
         
                 # MARKET 2: Total points / Over Under
                 with market2:
