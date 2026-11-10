@@ -62,6 +62,167 @@ def save_bets(df):
 SLIP_PATH = Path(__file__).with_name("nba_bet_slips.csv")
 LEG_PATH = Path(__file__).with_name("nba_bet_selections.csv")
 DELETED_LEGACY_PATH = Path(__file__).with_name("nba_deleted_legacy_bets.csv")
+
+
+# Persistência opcional no GitHub (necessária na Streamlit Community Cloud).
+# Configurar em Streamlit Cloud > App > Settings > Secrets:
+# GITHUB_TOKEN = "ghp_..."
+# GITHUB_REPOSITORY = "lmdpires/nba-lab-pro"
+# GITHUB_BRANCH = "main"
+GITHUB_API = "https://api.github.com"
+GITHUB_FILES = ("nba_bet_slips.csv", "nba_bet_selections.csv")
+
+def github_configured():
+    try:
+        return bool(st.secrets.get("GITHUB_TOKEN")) and bool(
+            st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+        )
+    except Exception:
+        return False
+
+def github_headers():
+    return {
+        "Authorization": f"Bearer {st.secrets['GITHUB_TOKEN']}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+def github_get_branch_head():
+    repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    url = f"{GITHUB_API}/repos/{repo}/git/ref/heads/{branch}"
+    response = requests.get(url, headers=github_headers(), timeout=20)
+    response.raise_for_status()
+    return response.json()["object"]["sha"]
+
+def github_read_csv(filename, commit_sha=None):
+    if not github_configured():
+        return None
+    repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+    ref = commit_sha or st.secrets.get("GITHUB_BRANCH", "main")
+    url = f"{GITHUB_API}/repos/{repo}/contents/{filename}"
+    response = requests.get(url, headers=github_headers(),
+                            params={"ref": ref}, timeout=20)
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    import base64
+    return base64.b64decode(response.json()["content"])
+
+def github_commit_bet_csvs(slips_bytes, legs_bytes):
+    """Publica os dois CSV num único commit Git, atualizando a branch sem force."""
+    if not github_configured():
+        raise RuntimeError("GitHub não está configurado nos Secrets da aplicação.")
+
+    import base64
+    repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    headers = github_headers()
+
+    # Captura o estado-base da branch; a atualização final só avança se não houver corrida.
+    ref_url = f"{GITHUB_API}/repos/{repo}/git/ref/heads/{branch}"
+    ref_response = requests.get(ref_url, headers=headers, timeout=20)
+    ref_response.raise_for_status()
+    base_commit_sha = ref_response.json()["object"]["sha"]
+
+    commit_url = f"{GITHUB_API}/repos/{repo}/git/commits/{base_commit_sha}"
+    base_commit_response = requests.get(commit_url, headers=headers, timeout=20)
+    base_commit_response.raise_for_status()
+    base_tree_sha = base_commit_response.json()["tree"]["sha"]
+
+    def create_blob(content):
+        response = requests.post(
+            f"{GITHUB_API}/repos/{repo}/git/blobs",
+            headers=headers,
+            json={
+                "content": base64.b64encode(content).decode("ascii"),
+                "encoding": "base64",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()["sha"]
+
+    slips_blob = create_blob(slips_bytes)
+    legs_blob = create_blob(legs_bytes)
+
+    tree_response = requests.post(
+        f"{GITHUB_API}/repos/{repo}/git/trees",
+        headers=headers,
+        json={
+            "base_tree": base_tree_sha,
+            "tree": [
+                {"path": "nba_bet_slips.csv", "mode": "100644", "type": "blob", "sha": slips_blob},
+                {"path": "nba_bet_selections.csv", "mode": "100644", "type": "blob", "sha": legs_blob},
+            ],
+        },
+        timeout=30,
+    )
+    tree_response.raise_for_status()
+    new_tree_sha = tree_response.json()["sha"]
+
+    new_commit_response = requests.post(
+        f"{GITHUB_API}/repos/{repo}/git/commits",
+        headers=headers,
+        json={
+            "message": "Update NBA LAB PRO bet history",
+            "tree": new_tree_sha,
+            "parents": [base_commit_sha],
+        },
+        timeout=30,
+    )
+    new_commit_response.raise_for_status()
+    new_commit_sha = new_commit_response.json()["sha"]
+
+    update_response = requests.patch(
+        ref_url,
+        headers=headers,
+        json={"sha": new_commit_sha, "force": False},
+        timeout=30,
+    )
+    if update_response.status_code in (409, 422):
+        raise RuntimeError(
+            "A branch main mudou durante a gravação. Nenhum dos dois CSV foi publicado; "
+            "atualize a aplicação e tente novamente."
+        )
+    update_response.raise_for_status()
+    return new_commit_sha
+
+def sync_bet_csvs_from_github():
+    """Lê os dois CSV do mesmo commit e só substitui os locais após validar ambos."""
+    if not github_configured():
+        return
+
+    try:
+        commit_sha = github_get_branch_head()
+        slips_content = github_read_csv("nba_bet_slips.csv", commit_sha)
+        legs_content = github_read_csv("nba_bet_selections.csv", commit_sha)
+
+        if slips_content is None or legs_content is None:
+            raise RuntimeError(
+                "Não encontrei os dois ficheiros de apostas no GitHub. "
+                "Os CSV locais não foram alterados."
+            )
+
+        # Validar estrutura antes de tocar nos ficheiros locais.
+        import io
+        slips_check = pd.read_csv(io.BytesIO(slips_content))
+        legs_check = pd.read_csv(io.BytesIO(legs_content))
+        if not set(SLIP_COLUMNS).issubset(slips_check.columns):
+            raise RuntimeError("O CSV de boletins no GitHub tem colunas inesperadas.")
+        if not set(LEG_COLUMNS).issubset(legs_check.columns):
+            raise RuntimeError("O CSV de seleções no GitHub tem colunas inesperadas.")
+
+        SLIP_PATH.write_bytes(slips_content)
+        LEG_PATH.write_bytes(legs_content)
+    except Exception as exc:
+        st.error(
+            "Não foi possível confirmar a leitura do histórico persistente no GitHub. "
+            "Por segurança, a aplicação não deve continuar a gravar apostas até resolvermos o problema. "
+            f"Detalhe: {exc}"
+        )
+        st.stop()
+
 SLIP_COLUMNS = ["slip_id", "saved_at", "bet_type", "stake", "combined_odds", "status", "return_amount", "profit_loss"]
 LEG_COLUMNS = ["selection_id", "slip_id", "game_id", "game_date", "home_team", "away_team",
                "selection", "line", "odds", "away_score", "home_score", "actual_total", "result"]
@@ -91,8 +252,29 @@ def load_legs():
     return pd.DataFrame(columns=LEG_COLUMNS)
 
 def save_slip_data(slips, legs):
-    slips[SLIP_COLUMNS].to_csv(SLIP_PATH, index=False)
-    legs[LEG_COLUMNS].to_csv(LEG_PATH, index=False)
+    """Guarda os dois CSV no mesmo commit GitHub; só depois atualiza a cópia local."""
+    slips_csv = slips[SLIP_COLUMNS].to_csv(index=False).encode("utf-8")
+    legs_csv = legs[LEG_COLUMNS].to_csv(index=False).encode("utf-8")
+
+    if not github_configured():
+        st.error(
+            "As apostas não foram consideradas guardadas em segurança: "
+            "a persistência GitHub não está configurada. Não feche a aplicação "
+            "até configurar a ligação."
+        )
+        st.stop()
+
+    try:
+        github_commit_bet_csvs(slips_csv, legs_csv)
+        SLIP_PATH.write_bytes(slips_csv)
+        LEG_PATH.write_bytes(legs_csv)
+    except Exception as exc:
+        st.error(
+            "Falha ao guardar as apostas no GitHub. Os ficheiros persistentes não foram "
+            "atualizados; não considere esta operação concluída. "
+            f"Detalhe: {exc}"
+        )
+        st.stop()
 
 def load_deleted_legacy_bet_ids():
     """IDs de apostas antigas eliminadas; evita que a migração as recrie."""
@@ -823,6 +1005,51 @@ div[class*="st-key-select_slip_"] div[data-testid="stButton"] > button:hover {
     font-weight:850;
     white-space:nowrap;
 }
+
+/* Exportações: botões compactos, em formato pill, com acabamento premium */
+.st-key-export_slips_compact button,
+.st-key-export_legs_compact button,
+.st-key-export_full_backup_compact button {
+    width:100%!important;
+    min-height:36px!important;
+    height:36px!important;
+    padding:6px 10px!important;
+    border-radius:999px!important;
+    justify-content:center!important;
+    text-align:center!important;
+    white-space:nowrap!important;
+    font-size:.72rem!important;
+    font-weight:800!important;
+    letter-spacing:.01em!important;
+    color:#dcecff!important;
+    -webkit-text-fill-color:#dcecff!important;
+    background:linear-gradient(135deg,#17283a,#101b29)!important;
+    border:1px solid #34506a!important;
+    box-shadow:0 3px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.035)!important;
+    transition:all .16s ease!important;
+}
+.st-key-export_slips_compact button:hover,
+.st-key-export_legs_compact button:hover,
+.st-key-export_full_backup_compact button:hover {
+    transform:translateY(-1px)!important;
+    border-color:#68c4ff!important;
+    background:linear-gradient(135deg,#203c55,#152a3d)!important;
+    color:#ffffff!important;
+    -webkit-text-fill-color:#ffffff!important;
+    box-shadow:0 5px 14px rgba(0,0,0,.24),0 0 0 1px rgba(104,196,255,.12)!important;
+}
+.st-key-export_full_backup_compact button {
+    background:linear-gradient(135deg,#16483f,#12352f)!important;
+    border-color:#287b68!important;
+    color:#8df0cf!important;
+    -webkit-text-fill-color:#8df0cf!important;
+}
+.st-key-export_full_backup_compact button:hover {
+    background:linear-gradient(135deg,#1b6656,#16483f)!important;
+    border-color:#48d6ad!important;
+    color:#ffffff!important;
+    -webkit-text-fill-color:#ffffff!important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1046,6 +1273,7 @@ def parse_api_game(item):
 log_df = load_log()
 bets_df = load_bets()
 market_drafts = load_market_drafts()
+sync_bet_csvs_from_github()
 slips_df = load_slips()
 legs_df = load_legs()
 result_games_by_id = {normalize_game_id(g["id"]): g for g in games}
@@ -2144,25 +2372,51 @@ if active_page == "Ver apostas":
                                 st.success("Boletim e seleções eliminados.")
                                 st.rerun()
         
-            with st.expander("Gestão de dados · Backup completo"):
-                st.caption("O backup inclui os dados gerais dos boletins e todas as respetivas seleções.")
+            with st.expander("Gestão de dados · Exportações"):
+                st.caption("Pode exportar os boletins e as seleções separadamente. O ZIP completo continua disponível como cópia conjunta.")
+                export_col1, export_col2, export_col3 = st.columns(3, gap="small")
+                with export_col1:
+                    st.download_button(
+                        "📄  Boletins CSV",
+                        data=slips_df[SLIP_COLUMNS].to_csv(index=False).encode("utf-8-sig"),
+                        file_name="nba_bet_slips.csv",
+                        mime="text/csv",
+                        key="export_slips_compact",
+                        help="Exportar apenas os boletins registados",
+                    )
+                with export_col2:
+                    st.download_button(
+                        "🎯  Seleções CSV",
+                        data=legs_df[LEG_COLUMNS].to_csv(index=False).encode("utf-8-sig"),
+                        file_name="nba_bet_selections.csv",
+                        mime="text/csv",
+                        key="export_legs_compact",
+                        help="Exportar apenas as seleções dos boletins",
+                    )
                 backup_buffer = io.BytesIO()
                 with zipfile.ZipFile(backup_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as backup_zip:
                     backup_zip.writestr(
                         "nba_bet_slips.csv",
-                        slips_df.to_csv(index=False).encode("utf-8-sig")
+                        slips_df[SLIP_COLUMNS].to_csv(index=False).encode("utf-8-sig")
                     )
                     backup_zip.writestr(
                         "nba_bet_selections.csv",
-                        legs_df.to_csv(index=False).encode("utf-8-sig")
+                        legs_df[LEG_COLUMNS].to_csv(index=False).encode("utf-8-sig")
                     )
-                st.download_button(
-                    "Descarregar backup completo (.zip)",
-                    data=backup_buffer.getvalue(),
-                    file_name="nba_bet_backup_completo.zip",
-                    mime="application/zip",
-                    type="secondary",
-                )
+                with export_col3:
+                    st.download_button(
+                        "📦  Backup ZIP",
+                        data=backup_buffer.getvalue(),
+                        file_name="nba_bet_backup_completo.zip",
+                        mime="application/zip",
+                        key="export_full_backup_compact",
+                        help="Exportar os dois ficheiros num único backup",
+                    )
+                if github_configured():
+                    st.caption("Persistência GitHub ativa: os dois CSV são sincronizados no arranque e guardados juntos num único commit.")
+                else:
+                    st.warning("Persistência GitHub não configurada. As apostas não podem ser guardadas com segurança até configurar os Secrets.")
+
         
         
 
