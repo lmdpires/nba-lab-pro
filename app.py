@@ -87,11 +87,19 @@ def github_headers():
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
+def github_read_headers():
+    # O repositório é público: leituras usam API pública sem token.
+    # O token fica reservado às operações que alteram o repositório.
+    return {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
 def github_get_branch_head():
     repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
     branch = st.secrets.get("GITHUB_BRANCH", "main")
     url = f"{GITHUB_API}/repos/{repo}/git/ref/heads/{branch}"
-    response = requests.get(url, headers=github_headers(), timeout=20)
+    response = requests.get(url, headers=github_read_headers(), timeout=20)
     response.raise_for_status()
     return response.json()["object"]["sha"]
 
@@ -101,7 +109,7 @@ def github_read_csv(filename, commit_sha=None):
     repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
     ref = commit_sha or st.secrets.get("GITHUB_BRANCH", "main")
     url = f"{GITHUB_API}/repos/{repo}/contents/{filename}"
-    response = requests.get(url, headers=github_headers(),
+    response = requests.get(url, headers=github_read_headers(),
                             params={"ref": ref}, timeout=20)
     if response.status_code == 404:
         return None
@@ -121,12 +129,12 @@ def github_commit_bet_csvs(slips_bytes, legs_bytes):
 
     # Captura o estado-base da branch; a atualização final só avança se não houver corrida.
     ref_url = f"{GITHUB_API}/repos/{repo}/git/ref/heads/{branch}"
-    ref_response = requests.get(ref_url, headers=headers, timeout=20)
+    ref_response = requests.get(ref_url, headers=github_read_headers(), timeout=20)
     ref_response.raise_for_status()
     base_commit_sha = ref_response.json()["object"]["sha"]
 
     commit_url = f"{GITHUB_API}/repos/{repo}/git/commits/{base_commit_sha}"
-    base_commit_response = requests.get(commit_url, headers=headers, timeout=20)
+    base_commit_response = requests.get(commit_url, headers=github_read_headers(), timeout=20)
     base_commit_response.raise_for_status()
     base_tree_sha = base_commit_response.json()["tree"]["sha"]
 
