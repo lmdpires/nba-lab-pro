@@ -2095,13 +2095,11 @@ def _daily_report_action(selected_day, current_games):
 
 
 def _render_daily_report_button(day, day_games):
-    st.markdown("#### Relatório diário")
     st.caption(
-        "Primeiro clique: captura pré-jogo M1/M2 + odds DunkAPI. "
-        "Num clique posterior, quando os jogos estiverem terminados, recolhe os resultados."
+        "Captura pré-jogo M1/M2 e odds; depois atualiza os resultados finais."
     )
     if st.button(
-        "📊 Preparar relatório diário",
+        "📊 Preparar relatório",
         key=f"prepare_daily_report_{day.isoformat()}",
         use_container_width=True,
         type="primary",
@@ -2121,13 +2119,20 @@ def _render_daily_report_button(day, day_games):
     download = st.session_state.get("nba_daily_report_download")
     if download:
         st.download_button(
-            "⬇️ Descarregar ZIP do relatório",
+            "⬇️ Descarregar ZIP",
             data=download["content"],
             file_name=download["filename"],
             mime="application/zip",
             key=f"download_{download['filename']}",
             use_container_width=True,
         )
+
+
+# Relatórios no menu esquerdo: separado da lista de jogos e dos mercados.
+with nav_area:
+    st.markdown("---")
+    st.markdown("#### RELATÓRIOS")
+    _render_daily_report_button(selected_date, games)
 
 
 selected_game = next((g for g in games if g["id"] == st.session_state.get("nba_selected_game")), None)
@@ -2138,7 +2143,6 @@ if active_page == "Ver calendário":
         with left:
             st.markdown('<div class="section-label">01 · Jogos</div>', unsafe_allow_html=True)
             st.date_input("Data dos jogos", value=selected_date, key="nba_matchday_widget", on_change=persist_matchday, format="DD/MM/YYYY")
-            _render_daily_report_button(selected_date, games)
             st.markdown(f'<div class="fixture-help">{selected_date.strftime("%A, %d %B %Y")} · {len(games)} jogo(s)</div>', unsafe_allow_html=True)
             if not API_KEY:
                 st.warning("Configura `API_SPORTS_NBA_KEY` nas Secrets.")
