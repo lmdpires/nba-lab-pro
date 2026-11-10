@@ -163,7 +163,9 @@ def github_commit_bet_csvs(slips_bytes, legs_bytes):
     headers = github_headers()
 
     # Captura o estado-base da branch; a atualização final só avança se não houver corrida.
+    # GET usa /git/ref/... (singular); PATCH usa /git/refs/... (plural).
     ref_url = f"{GITHUB_API}/repos/{repo}/git/ref/heads/{branch}"
+    update_ref_url = f"{GITHUB_API}/repos/{repo}/git/refs/heads/{branch}"
     ref_response = requests.get(ref_url, headers=github_read_headers(), timeout=20)
     ref_response.raise_for_status()
     base_commit_sha = ref_response.json()["object"]["sha"]
@@ -218,7 +220,7 @@ def github_commit_bet_csvs(slips_bytes, legs_bytes):
     new_commit_sha = new_commit_response.json()["sha"]
 
     update_response = requests.patch(
-        ref_url,
+        update_ref_url,
         headers=headers,
         json={"sha": new_commit_sha, "force": False},
         timeout=30,
