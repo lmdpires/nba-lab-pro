@@ -4,6 +4,7 @@ import uuid
 import io
 import json
 import re
+import unicodedata
 import zipfile
 from html import escape
 from pathlib import Path
@@ -1663,73 +1664,145 @@ def _daily_fetch_dunk_odds(et_dates):
 
 
 def _daily_flatten_odds(raw_responses, games_by_id):
-    """Flatten bookmaker records where possible, while retaining the untouched raw payload."""
+    """
+    Flatten DunkAPI's data.games[].books[] response and associate it with the
+    app/API-Sports game IDs. DunkAPI game IDs are a different namespace, so
+    matching is done by exact home/away team names plus kickoff timestamp.
+    The raw response is retained separately in the ZIP.
+    """
     records = []
-    wanted = (
-        "home_ml_open", "home_ml_close", "away_ml_open", "away_ml_close",
-        "captured_at", "provider", "game_id",
-    )
 
-    def walk(node, inherited=None):
-        inherited = dict(inherited or {})
-        if isinstance(node, list):
-            for child in node:
-                walk(child, inherited)
-            return
-        if not isinstance(node, dict):
-            return
+    def norm_team(value):
+        value = str(value or "").strip().casefold()
+        value = unicodedata.normalize("NFKD", value)
+        value = "".join(ch for ch in value if not unicodedata.combining(ch))
+        value = re.sub(r"[^a-z0-9]+", " ", value)
+        return " ".join(value.split())
 
-        merged = dict(inherited)
-        for key in ("game_id", "id", "home_team", "away_team", "home", "away",
-                    "starts_at", "provider", "bookmaker", *wanted):
-            if key in node and node[key] is not None:
-                merged[key] = node[key]
+    def as_utc(value):
+        try:
+            stamp = pd.to_datetime(value, utc=True, errors="coerce")
+            return None if pd.isna(stamp) else stamp
+        except Exception:
+            return None
 
-        has_odds = any(k in node for k in (
-            "home_ml_open", "home_ml_close", "away_ml_open", "away_ml_close"
-        ))
-        if has_odds:
-            gid = str(merged.get("game_id", merged.get("id", "")))
-            matched = games_by_id.get(gid, {})
-            starts_at = merged.get("starts_at") or matched.get("starts_at")
-            captured_at = merged.get("captured_at")
-            before_start = None
-            minutes_before = None
-            try:
-                start_ts = pd.to_datetime(starts_at, utc=True)
-                capture_ts = pd.to_datetime(captured_at, utc=True)
-                minutes_before = (start_ts - capture_ts).total_seconds() / 60
-                before_start = bool(capture_ts < start_ts)
-            except Exception:
-                pass
+    # Build a deterministic lookup from the app's game records.
+    app_games = []
+    for app_game_id, game in (games_by_id or {}).items():
+        home = game.get("home_team") or game.get("home") or ""
+        away = game.get("away_team") or game.get("away") or ""
+        starts = game.get("starts_at") or game.get("starts_at_utc")
+        app_games.append({
+            "app_game_id": str(app_game_id),
+            "home_team": str(home),
+            "away_team": str(away),
+            "home_norm": norm_team(home),
+            "away_norm": norm_team(away),
+            "starts_at": starts,
+            "starts_ts": as_utc(starts),
+        })
 
-            provider = merged.get("provider", merged.get("bookmaker", ""))
-            if isinstance(provider, dict):
-                provider = provider.get("name") or provider.get("title") or provider.get("id")
-            records.append({
-                "game_id": gid,
-                "home_team": merged.get("home_team", matched.get("home_team", "")),
-                "away_team": merged.get("away_team", matched.get("away_team", "")),
-                "starts_at": starts_at,
-                "provider": provider,
-                "home_ml_open": merged.get("home_ml_open"),
-                "home_ml_close": merged.get("home_ml_close"),
-                "away_ml_open": merged.get("away_ml_open"),
-                "away_ml_close": merged.get("away_ml_close"),
-                "captured_at": captured_at,
-                "captured_before_start": before_start,
-                "minutes_before_start": minutes_before,
-            })
+    def identify_app_game(dunk_game):
+        home_obj = dunk_game.get("home") or {}
+        away_obj = dunk_game.get("away") or {}
+        home_name = home_obj.get("name") if isinstance(home_obj, dict) else home_obj
+        away_name = away_obj.get("name") if isinstance(away_obj, dict) else away_obj
+        home_norm, away_norm = norm_team(home_name), norm_team(away_name)
+        dunk_start = as_utc(dunk_game.get("starts_at") or dunk_game.get("date"))
+        if not home_norm or not away_norm or dunk_start is None:
+            return None, "unmatched_missing_team_or_start"
 
-        for key, value in node.items():
-            if isinstance(value, (dict, list)):
-                child_context = dict(merged)
-                if key.lower() in {"bookmaker", "bookmakers", "provider", "providers"} and isinstance(value, dict):
-                    child_context.setdefault("provider", value.get("name") or value.get("title") or value.get("id"))
-                walk(value, child_context)
+        candidates = [
+            g for g in app_games
+            if g["home_norm"] == home_norm and g["away_norm"] == away_norm
+        ]
+        if not candidates:
+            return None, "unmatched_team_names"
 
-    for response in raw_responses:
-        walk(response.get("payload"))
+        timed = []
+        for candidate in candidates:
+            if candidate["starts_ts"] is None:
+                continue
+            delta_seconds = abs((candidate["starts_ts"] - dunk_start).total_seconds())
+            if delta_seconds <= 300:
+                timed.append((delta_seconds, candidate))
+        if len(timed) == 1:
+            return timed[0][1], "matched_exact_teams_and_kickoff"
+        if len(timed) > 1:
+            timed.sort(key=lambda item: item[0])
+            if timed[0][0] < timed[1][0]:
+                return timed[0][1], "matched_exact_teams_and_nearest_kickoff"
+            return None, "unmatched_ambiguous_kickoff"
+        return None, "unmatched_kickoff"
+
+    for response_item in raw_responses or []:
+        payload = response_item.get("payload") or {}
+        data = payload.get("data") if isinstance(payload, dict) else None
+        dunk_games = data.get("games", []) if isinstance(data, dict) else []
+
+        # The DunkAPI response used by this app has data.games[].books[].
+        # Keep a conservative fallback for alternative wrappers, but never
+        # infer a game association from the DunkAPI game_id alone.
+        if not isinstance(dunk_games, list):
+            dunk_games = []
+
+        for dunk_game in dunk_games:
+            if not isinstance(dunk_game, dict):
+                continue
+            matched, match_status = identify_app_game(dunk_game)
+            home_obj = dunk_game.get("home") or {}
+            away_obj = dunk_game.get("away") or {}
+            home_name = home_obj.get("name", "") if isinstance(home_obj, dict) else str(home_obj)
+            away_name = away_obj.get("name", "") if isinstance(away_obj, dict) else str(away_obj)
+            starts_at = dunk_game.get("starts_at")
+            books = dunk_game.get("books") or []
+            if not isinstance(books, list):
+                continue
+
+            for book in books:
+                if not isinstance(book, dict):
+                    continue
+                captured_at = book.get("captured_at") or dunk_game.get("captured_at")
+                start_ts = as_utc(starts_at)
+                capture_ts = as_utc(captured_at)
+                before_start = None
+                minutes_before = None
+                if start_ts is not None and capture_ts is not None:
+                    minutes_before = (start_ts - capture_ts).total_seconds() / 60
+                    before_start = bool(capture_ts < start_ts)
+
+                records.append({
+                    # Canonical ID used by the app/API-Sports, when matched.
+                    "game_id": matched["app_game_id"] if matched else "",
+                    "dunkapi_game_id": str(dunk_game.get("game_id", "")),
+                    "match_status": match_status,
+                    "match_method": (
+                        "exact_home_away_names_and_kickoff_within_5m"
+                        if matched else ""
+                    ),
+                    "home_team": matched["home_team"] if matched else str(home_name or ""),
+                    "away_team": matched["away_team"] if matched else str(away_name or ""),
+                    "dunkapi_home_team": str(home_name or ""),
+                    "dunkapi_away_team": str(away_name or ""),
+                    "starts_at": starts_at,
+                    "provider": book.get("provider", ""),
+                    "home_ml_open": book.get("home_ml_open"),
+                    "home_ml_close": book.get("home_ml_close"),
+                    "away_ml_open": book.get("away_ml_open"),
+                    "away_ml_close": book.get("away_ml_close"),
+                    "home_spread_open": book.get("home_spread_open"),
+                    "home_spread_close": book.get("home_spread_close"),
+                    "spread_home_odds": book.get("spread_home_odds"),
+                    "spread_away_odds": book.get("spread_away_odds"),
+                    "total_open": book.get("total_open"),
+                    "total_close": book.get("total_close"),
+                    "over_odds": book.get("over_odds"),
+                    "under_odds": book.get("under_odds"),
+                    "captured_at": captured_at,
+                    "captured_before_start": before_start,
+                    "minutes_before_start": minutes_before,
+                })
+
     return records
 
 
