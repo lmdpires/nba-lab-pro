@@ -1238,6 +1238,10 @@ MEDIAS_REAIS = {
 # Calendar date persists across navigation so reconciliation can continue in the background.
 def persist_matchday():
     st.session_state["nba_matchday"] = st.session_state["nba_matchday_widget"]
+    # The date picker lives inside a Streamlit fragment. Force a full-app rerun
+    # so date_str, API fixtures, selected game and report state are rebuilt
+    # for the newly selected calendar date.
+    st.rerun()
 
 selected_date = st.session_state.get("nba_matchday", datetime.date.today())
 date_str = selected_date.strftime("%Y-%m-%d")
