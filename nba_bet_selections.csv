@@ -1,0 +1,57 @@
+﻿selection_id,slip_id,game_id,game_date,home_team,away_team,selection,line,odds,away_score,home_score,actual_total,result
+83c780be8274-1,83c780be8274,17081,2026-11-08,Detroit Pistons,Los Angeles Lakers,Moneyline · Casa,,1.34,121.0,116.0,237.0,Falhou
+83c780be8274-2,83c780be8274,17082,2026-11-09,Minnesota Timberwolves,Utah Jazz,Over,220.5,1.67,100.0,115.0,215.0,Falhou
+83c780be8274-3,83c780be8274,17083,2026-11-09,Dallas Mavericks,Brooklyn Nets,Moneyline · Casa,,1.3,93.0,130.0,223.0,Acertou
+83c780be8274-4,83c780be8274,17084,2026-11-09,Milwaukee Bucks,Boston Celtics,Moneyline · Visitante,,1.11,117.0,97.0,214.0,Acertou
+83c780be8274-5,83c780be8274,17085,2026-11-09,LA Clippers,New Orleans Pelicans,Over,218.5,1.37,123.0,139.0,262.0,Acertou
+83c780be8274-6,83c780be8274,17086,2026-11-09,Sacramento Kings,Miami Heat,Moneyline · Visitante,,1.19,114.0,108.0,222.0,Acertou
+47177d28312f-1,47177d28312f,17073,2026-11-07,Indiana Pacers,Denver Nuggets,Over,221.5,1.4,114.0,102.0,216.0,Falhou
+47177d28312f-2,47177d28312f,17074,2026-11-08,Atlanta Hawks,Brooklyn Nets,Moneyline · Casa,,1.34,121.0,124.0,245.0,Acertou
+47177d28312f-3,47177d28312f,17076,2026-11-08,Oklahoma City Thunder,Washington Wizards,Over,215.5,1.42,75.0,114.0,189.0,Falhou
+47177d28312f-4,47177d28312f,17075,2026-11-08,Cleveland Cavaliers,New York Knicks,Over,214.5,1.36,109.0,97.0,206.0,Falhou
+47177d28312f-5,47177d28312f,17077,2026-11-08,Golden State Warriors,Orlando Magic,Over,212.5,1.39,119.0,126.0,245.0,Acertou
+47177d28312f-6,47177d28312f,17078,2026-11-08,Phoenix Suns,Houston Rockets,Over,214.5,1.35,99.0,102.0,201.0,Falhou
+47177d28312f-7,47177d28312f,17079,2026-11-08,Portland Trail Blazers,San Antonio Spurs,Over,219.5,1.33,125.0,103.0,228.0,Acertou
+cf3b9956e40b-1,cf3b9956e40b,17064,2026-11-07,Atlanta Hawks,Washington Wizards,Moneyline · Casa,,1.32,132.0,139.0,271.0,Acertou
+cf3b9956e40b-2,cf3b9956e40b,17065,2026-11-07,Charlotte Hornets,Boston Celtics,Moneyline · Visitante,,1.27,119.0,80.0,199.0,Acertou
+cf3b9956e40b-3,cf3b9956e40b,17066,2026-11-07,Cleveland Cavaliers,Philadelphia 76ers,Over,224.5,1.51,95.0,119.0,214.0,Falhou
+cf3b9956e40b-4,cf3b9956e40b,17067,2026-11-07,Dallas Mavericks,Utah Jazz,Over,224.5,1.66,100.0,112.0,212.0,Falhou
+cf3b9956e40b-5,cf3b9956e40b,17068,2026-11-07,Memphis Grizzlies,Oklahoma City Thunder,Over,219.5,1.54,128.0,97.0,225.0,Acertou
+cf3b9956e40b-6,cf3b9956e40b,17069,2026-11-07,Milwaukee Bucks,Toronto Raptors,Over,225.5,1.52,121.0,107.0,228.0,Acertou
+cf3b9956e40b-7,cf3b9956e40b,17070,2026-11-07,New Orleans Pelicans,Minnesota Timberwolves,Over,224.5,1.45,115.0,109.0,224.0,Falhou
+cf3b9956e40b-8,cf3b9956e40b,17071,2026-11-07,Los Angeles Lakers,Portland Trail Blazers,Over,221.5,1.28,118.0,124.0,242.0,Acertou
+cf3b9956e40b-9,cf3b9956e40b,17072,2026-11-07,Sacramento Kings,San Antonio Spurs,Over,220.5,1.33,124.0,109.0,233.0,Acertou
+119d25eb85a3-1,119d25eb85a3,17062,2026-11-06,Phoenix Suns,Orlando Magic,Over,217.5,1.5,104.0,117.0,221.0,Acertou
+119d25eb85a3-2,119d25eb85a3,17063,2026-11-06,Golden State Warriors,Miami Heat,Over,230.5,1.58,100.0,120.0,220.0,Falhou
+c2354f4f62f5-1,c2354f4f62f5,17048,2026-11-05,Detroit Pistons,Philadelphia 76ers,Over,214.5,1.54,112.0,106.0,218.0,Acertou
+c2354f4f62f5-2,c2354f4f62f5,17049,2026-11-05,Washington Wizards,Atlanta Hawks,Over,224.5,1.5,120.0,105.0,225.0,Acertou
+c2354f4f62f5-3,c2354f4f62f5,17051,2026-11-05,Brooklyn Nets,Charlotte Hornets,Over,208.5,1.57,104.0,114.0,218.0,Acertou
+c2354f4f62f5-4,c2354f4f62f5,17050,2026-11-05,Boston Celtics,Milwaukee Bucks,Over,216.5,1.54,102.0,109.0,211.0,Falhou
+c2354f4f62f5-5,c2354f4f62f5,17053,2026-11-05,Memphis Grizzlies,Indiana Pacers,Over,223.5,1.54,107.0,103.0,210.0,Falhou
+c2354f4f62f5-6,c2354f4f62f5,17054,2026-11-05,New Orleans Pelicans,Utah Jazz,Over,226.5,1.51,113.0,120.0,233.0,Acertou
+c2354f4f62f5-7,c2354f4f62f5,17055,2026-11-05,Oklahoma City Thunder,Cleveland Cavaliers,Over,220.5,1.48,116.0,124.0,240.0,Acertou
+c2354f4f62f5-8,c2354f4f62f5,17056,2026-11-05,Houston Rockets,Minnesota Timberwolves,Over,215.5,1.6,117.0,107.0,224.0,Acertou
+c2354f4f62f5-9,c2354f4f62f5,17057,2026-11-05,Denver Nuggets,Toronto Raptors,Over,224.5,1.49,109.0,128.0,237.0,Acertou
+c2354f4f62f5-10,c2354f4f62f5,17058,2026-11-05,Phoenix Suns,Portland Trail Blazers,Under,234.5,1.46,132.0,119.0,251.0,Falhou
+c2354f4f62f5-11,c2354f4f62f5,17059,2026-11-05,San Antonio Spurs,Dallas Mavericks,Over,221.5,1.52,111.0,112.0,223.0,Acertou
+c2354f4f62f5-12,c2354f4f62f5,17052,2026-11-05,New York Knicks,Chicago Bulls,Under,238.5,1.55,105.0,135.0,240.0,Falhou
+a992c4caa677-1,a992c4caa677,17035,2026-11-03,Indiana Pacers,Atlanta Hawks,Over,224.5,1.63,108.0,104.0,212.0,Falhou
+a992c4caa677-2,a992c4caa677,17039,2026-11-03,Dallas Mavericks,Sacramento Kings,Over,226.5,1.51,115.0,100.0,215.0,Falhou
+a992c4caa677-3,a992c4caa677,17040,2026-11-03,Memphis Grizzlies,New Orleans Pelicans,Over,226.5,1.49,135.0,134.0,269.0,Acertou
+a992c4caa677-4,a992c4caa677,17042,2026-11-03,Houston Rockets,Boston Celtics,Over,210.5,1.51,93.0,109.0,202.0,Falhou
+a992c4caa677-5,a992c4caa677,17043,2026-11-03,San Antonio Spurs,Utah Jazz,Over,223.5,1.49,97.0,119.0,216.0,Falhou
+c5373f6beba0-1,c5373f6beba0,17031,2026-11-02,Golden State Warriors,LA Clippers,Over,220.5,1.8,112.0,124.0,236.0,Acertou
+c5373f6beba0-2,c5373f6beba0,17032,2026-11-02,Los Angeles Lakers,Toronto Raptors,Over,214.5,1.32,125.0,131.0,256.0,Acertou
+1d16deda8843-1,1d16deda8843,17030,2026-11-01,Indiana Pacers,Brooklyn Nets,Over,221.5,1.37,98.0,90.0,188.0,Falhou
+1d16deda8843-2,1d16deda8843,17031,2026-11-02,Golden State Warriors,LA Clippers,Over,220.5,1.8,112.0,124.0,236.0,Acertou
+1d16deda8843-3,1d16deda8843,17032,2026-11-02,Los Angeles Lakers,Toronto Raptors,Over,214.5,1.29,125.0,131.0,256.0,Acertou
+22c17f44b548-1,22c17f44b548,17025,2026-11-01,Memphis Grizzlies,Sacramento Kings,Over,224.5,1.5,105.0,136.0,241.0,Acertou
+22c17f44b548-2,22c17f44b548,17026,2026-11-01,Milwaukee Bucks,Cleveland Cavaliers,Under,240.5,1.51,136.0,111.0,247.0,Falhou
+22c17f44b548-3,22c17f44b548,17027,2026-11-01,San Antonio Spurs,Minnesota Timberwolves,Under,233.5,1.53,111.0,121.0,232.0,Acertou
+b66127efde74-1,b66127efde74,17012,2026-10-30,Washington Wizards,Charlotte Hornets,Over,214.5,1.53,79.0,95.0,174.0,Falhou
+b66127efde74-2,b66127efde74,17014,2026-10-30,Brooklyn Nets,Detroit Pistons,Over,214.5,1.4,110.0,94.0,204.0,Falhou
+b66127efde74-3,b66127efde74,17015,2026-10-30,Philadelphia 76ers,New York Knicks,Under,230.5,1.52,93.0,98.0,191.0,Acertou
+b66127efde74-4,b66127efde74,17016,2026-10-30,Toronto Raptors,Orlando Magic,Over,219.5,1.42,121.0,114.0,235.0,Acertou
+b071d586e13e-1,b071d586e13e,17010,2026-10-30,New Orleans Pelicans,Sacramento Kings,Over,234.5,1.62,120.0,132.0,252.0,Acertou
+b071d586e13e-2,b071d586e13e,17009,2026-10-30,Atlanta Hawks,Cleveland Cavaliers,Over,233.5,1.53,111.0,114.0,225.0,Falhou
+b071d586e13e-3,b071d586e13e,17011,2026-10-30,Portland Trail Blazers,Memphis Grizzlies,Over,228.5,1.45,124.0,103.0,227.0,Falhou
