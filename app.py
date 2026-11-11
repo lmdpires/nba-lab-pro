@@ -2226,7 +2226,47 @@ def _daily_auto_capture_status(day, day_games, enabled=True):
 
     attempted_key = st.session_state.get("nba_daily_auto_attempted_date")
     if attempted_key == day_key:
-        return st.session_state.get("nba_daily_auto_status", "error")
+        current_status = st.session_state.get("nba_daily_auto_status", "error")
+
+        # A Streamlit execution can be interrupted without raising a Python
+        # exception (for example, a browser/session rerun while an API call is
+        # in progress). In that case the session latch can remain "capturing"
+        # forever. Only offer recovery when the coordination lock is absent
+        # or has expired; an active lock is never bypassed.
+        if current_status == "capturing":
+            lock_name = f"{day_key}_capture.lock.json"
+            lock_payload = _daily_read_json(lock_name)
+
+            if lock_payload is None:
+                st.session_state["nba_daily_auto_status"] = "error"
+                st.session_state["nba_daily_auto_error"] = (
+                    "A execução anterior foi interrompida antes de guardar a "
+                    "captura. Não foi encontrado um bloqueio ativo; pode tentar novamente."
+                )
+                return "error"
+
+            try:
+                lock_started = pd.to_datetime(
+                    lock_payload.get("started_at_utc"), utc=True, errors="raise"
+                )
+                lock_age_seconds = (
+                    pd.Timestamp.now(tz="UTC") - lock_started
+                ).total_seconds()
+            except Exception:
+                # An unreadable lock is treated as active. This is deliberately
+                # conservative: never risk two DunkAPI captures running together.
+                return "capturing"
+
+            if lock_age_seconds >= 20 * 60:
+                st.session_state["nba_daily_auto_status"] = "error"
+                st.session_state["nba_daily_auto_error"] = (
+                    "A captura anterior ultrapassou o prazo de segurança do bloqueio "
+                    "(20 minutos). Pode tentar novamente; o bloqueio expirado será "
+                    "validado antes de iniciar novos pedidos."
+                )
+                return "error"
+
+        return current_status
 
     if not day_games:
         return "no_games_yet"
