@@ -1859,15 +1859,35 @@ def _daily_build_predictions(day_games, captured_at):
     return rows
 
 
-def _daily_collect_results(pregame_payload):
-    """Fetch final scores from API-Sports for the games in the immutable pre-game snapshot."""
+def _daily_collect_results(pregame_payload, current_games=None):
+    """Reconcile frozen pre-game games against already-loaded fixtures, then API-Sports."""
     if not API_KEY:
         raise RuntimeError("API_SPORTS_NBA_KEY não configurada.")
     games_saved = pregame_payload.get("games", [])
     et_dates = sorted({str(g["game_date_et"]) for g in games_saved})
     found = {}
     api_calls = []
+
+    # Reuse the exact fixtures already loaded for the selected calendar date.
+    # This avoids a second API lookup disagreeing with the FINAL scores/status
+    # already visible in the games list (while keeping the pre-game snapshot immutable).
+    for game in (current_games or []):
+        gid = str(game.get("id", ""))
+        if gid:
+            found[gid] = {
+                "id": gid,
+                "status": game.get("status", "NS"),
+                "home_score": game.get("home_score"),
+                "away_score": game.get("away_score"),
+            }
+
+    # Fetch only dates with saved games still missing from the already-loaded fixtures.
+    saved_ids_by_date = {}
+    for saved in games_saved:
+        saved_ids_by_date.setdefault(str(saved["game_date_et"]), set()).add(str(saved["game_id"]))
     for et_day in et_dates:
+        if saved_ids_by_date.get(et_day, set()).issubset(found):
+            continue
         et_date = datetime.date.fromisoformat(et_day)
         season = str(et_date.year if et_date.month >= 10 else et_date.year - 1)
         payload, api_error = fetch_nba_api_date(et_day, season, API_KEY)
@@ -1877,7 +1897,7 @@ def _daily_collect_results(pregame_payload):
         for item in payload.get("response", []):
             parsed = parse_api_game(item)
             if parsed:
-                found[str(parsed["id"])] = parsed
+                found.setdefault(str(parsed["id"]), parsed)
 
     results = []
     unresolved = []
@@ -2243,7 +2263,7 @@ def _daily_report_action(selected_day, current_games):
 
     if target_day:
         pregame = _daily_read_json(f"{target_day}_pregame.json")
-        results_payload = _daily_collect_results(pregame)
+        results_payload = _daily_collect_results(pregame, current_games=current_games)
         if not results_payload["all_games_resolved"]:
             remaining = len(results_payload["unresolved_game_ids"])
             raise RuntimeError(
