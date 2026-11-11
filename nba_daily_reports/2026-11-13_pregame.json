@@ -1,0 +1,295 @@
+{
+  "report_date": "2026-11-13",
+  "captured_at_utc": "2026-11-11T09:43:14.061311+00:00",
+  "phase": "pregame",
+  "games": [
+    {
+      "game_id": "17111",
+      "home_team": "Philadelphia 76ers",
+      "away_team": "Toronto Raptors",
+      "starts_at_utc": "2026-11-13T00:00:00+00:00",
+      "game_date_et": "2026-11-12",
+      "game_date_portugal": "2026-11-13",
+      "status_at_capture": "NS"
+    },
+    {
+      "game_id": "17112",
+      "home_team": "Washington Wizards",
+      "away_team": "Detroit Pistons",
+      "starts_at_utc": "2026-11-13T00:00:00+00:00",
+      "game_date_et": "2026-11-12",
+      "game_date_portugal": "2026-11-13",
+      "status_at_capture": "NS"
+    },
+    {
+      "game_id": "17113",
+      "home_team": "Minnesota Timberwolves",
+      "away_team": "Dallas Mavericks",
+      "starts_at_utc": "2026-11-13T01:00:00+00:00",
+      "game_date_et": "2026-11-12",
+      "game_date_portugal": "2026-11-13",
+      "status_at_capture": "NS"
+    },
+    {
+      "game_id": "17114",
+      "home_team": "Phoenix Suns",
+      "away_team": "Charlotte Hornets",
+      "starts_at_utc": "2026-11-13T02:00:00+00:00",
+      "game_date_et": "2026-11-12",
+      "game_date_portugal": "2026-11-13",
+      "status_at_capture": "NS"
+    }
+  ],
+  "excluded_games": [],
+  "predictions": [
+    {
+      "captured_at_utc": "2026-11-11T09:43:14.061311+00:00",
+      "game_id": "17111",
+      "game_date_portugal": "2026-11-13",
+      "game_date_et": "2026-11-12",
+      "starts_at_utc": "2026-11-13T00:00:00+00:00",
+      "home_team": "Philadelphia 76ers",
+      "away_team": "Toronto Raptors",
+      "game_status_at_capture": "NS",
+      "m1_version": "M1 v1.1",
+      "m1_p_home": 0.5225628067104967,
+      "m1_p_away": 0.4774371932895033,
+      "m1_fair_home_odds": 1.9136455697927364,
+      "m1_fair_away_odds": 2.0945163344105673,
+      "m1_pick": "Casa",
+      "m2_version": "M2 HGB v1 frozen",
+      "m2_total_points": 229.2059723179947,
+      "m2_reference_line": 220.5,
+      "m2_p_over": 0.7123426742427594,
+      "m2_p_under": 0.28765732575724057,
+      "m2_fair_over_odds": 1.4038187464523706,
+      "m2_fair_under_odds": 3.4763585365592906,
+      "market_home_odds_manual": null,
+      "market_away_odds_manual": null,
+      "market_total_line_manual": null
+    },
+    {
+      "captured_at_utc": "2026-11-11T09:43:14.061311+00:00",
+      "game_id": "17112",
+      "game_date_portugal": "2026-11-13",
+      "game_date_et": "2026-11-12",
+      "starts_at_utc": "2026-11-13T00:00:00+00:00",
+      "home_team": "Washington Wizards",
+      "away_team": "Detroit Pistons",
+      "game_status_at_capture": "NS",
+      "m1_version": "M1 v1.1",
+      "m1_p_home": 0.14022437977807448,
+      "m1_p_away": 0.8597756202219256,
+      "m1_fair_home_odds": 7.13142751340848,
+      "m1_fair_away_odds": 1.1630941567543864,
+      "m1_pick": "Fora",
+      "m2_version": "M2 HGB v1 frozen",
+      "m2_total_points": 226.23980915200056,
+      "m2_reference_line": 220.5,
+      "m2_p_over": 0.6440720917053491,
+      "m2_p_under": 0.35592790829465093,
+      "m2_fair_over_odds": 1.5526212249815683,
+      "m2_fair_under_odds": 2.8095577129404563,
+      "market_home_odds_manual": null,
+      "market_away_odds_manual": null,
+      "market_total_line_manual": null
+    },
+    {
+      "captured_at_utc": "2026-11-11T09:43:14.061311+00:00",
+      "game_id": "17113",
+      "game_date_portugal": "2026-11-13",
+      "game_date_et": "2026-11-12",
+      "starts_at_utc": "2026-11-13T01:00:00+00:00",
+      "home_team": "Minnesota Timberwolves",
+      "away_team": "Dallas Mavericks",
+      "game_status_at_capture": "NS",
+      "m1_version": "M1 v1.1",
+      "m1_p_home": 0.7769523174063984,
+      "m1_p_away": 0.22304768259360164,
+      "m1_fair_home_odds": 1.2870802719762438,
+      "m1_fair_away_odds": 4.483346288883102,
+      "m1_pick": "Casa",
+      "m2_version": "M2 HGB v1 frozen",
+      "m2_total_points": 233.7767108639694,
+      "m2_reference_line": 220.5,
+      "m2_p_over": 0.8035514011207867,
+      "m2_p_under": 0.1964485988792133,
+      "m2_fair_over_odds": 1.2444754605681831,
+      "m2_fair_under_odds": 5.090390085270354,
+      "market_home_odds_manual": null,
+      "market_away_odds_manual": null,
+      "market_total_line_manual": null
+    },
+    {
+      "captured_at_utc": "2026-11-11T09:43:14.061311+00:00",
+      "game_id": "17114",
+      "game_date_portugal": "2026-11-13",
+      "game_date_et": "2026-11-12",
+      "starts_at_utc": "2026-11-13T02:00:00+00:00",
+      "home_team": "Phoenix Suns",
+      "away_team": "Charlotte Hornets",
+      "game_status_at_capture": "NS",
+      "m1_version": "M1 v1.1",
+      "m1_p_home": 0.5951646104847691,
+      "m1_p_away": 0.4048353895152309,
+      "m1_fair_home_odds": 1.6802074289758044,
+      "m1_fair_away_odds": 2.470139780016385,
+      "m1_pick": "Casa",
+      "m2_version": "M2 HGB v1 frozen",
+      "m2_total_points": 221.345556590145,
+      "m2_reference_line": 220.5,
+      "m2_p_over": 0.5216968435292171,
+      "m2_p_under": 0.4783031564707829,
+      "m2_fair_over_odds": 1.9168220249045766,
+      "m2_fair_under_odds": 2.090724233096473,
+      "market_home_odds_manual": null,
+      "market_away_odds_manual": null,
+      "market_total_line_manual": null
+    }
+  ],
+  "dunkapi_query_dates_et": [
+    "2026-11-12"
+  ],
+  "dunkapi_estimated_credits": 10,
+  "dunkapi_responses": [
+    {
+      "query_date_et": "2026-11-12",
+      "requested_at_utc": "2026-11-11T09:43:23.165402+00:00",
+      "estimated_credits": 10,
+      "payload": {
+        "data": {
+          "games": [
+            {
+              "game_id": "401909976",
+              "season": 2027,
+              "season_type": "regular",
+              "date": "2026-11-12",
+              "starts_at": "2026-11-13T00:00:00.000Z",
+              "status": "scheduled",
+              "home": {
+                "team_id": "20",
+                "abbrev": "PHI",
+                "name": "Philadelphia 76ers",
+                "score": null
+              },
+              "away": {
+                "team_id": "28",
+                "abbrev": "TOR",
+                "name": "Toronto Raptors",
+                "score": null
+              },
+              "periods": null,
+              "overtime_periods": null,
+              "neutral_site": false,
+              "conference_game": true,
+              "venue": "Xfinity Mobile Arena",
+              "city": "Philadelphia",
+              "attendance": null,
+              "books": [],
+              "result": null
+            },
+            {
+              "game_id": "401909977",
+              "season": 2027,
+              "season_type": "regular",
+              "date": "2026-11-12",
+              "starts_at": "2026-11-13T00:00:00.000Z",
+              "status": "scheduled",
+              "home": {
+                "team_id": "27",
+                "abbrev": "WSH",
+                "name": "Washington Wizards",
+                "score": null
+              },
+              "away": {
+                "team_id": "8",
+                "abbrev": "DET",
+                "name": "Detroit Pistons",
+                "score": null
+              },
+              "periods": null,
+              "overtime_periods": null,
+              "neutral_site": false,
+              "conference_game": true,
+              "venue": "Capital One Arena",
+              "city": "Washington",
+              "attendance": null,
+              "books": [],
+              "result": null
+            },
+            {
+              "game_id": "401909978",
+              "season": 2027,
+              "season_type": "regular",
+              "date": "2026-11-12",
+              "starts_at": "2026-11-13T01:00:00.000Z",
+              "status": "scheduled",
+              "home": {
+                "team_id": "16",
+                "abbrev": "MIN",
+                "name": "Minnesota Timberwolves",
+                "score": null
+              },
+              "away": {
+                "team_id": "6",
+                "abbrev": "DAL",
+                "name": "Dallas Mavericks",
+                "score": null
+              },
+              "periods": null,
+              "overtime_periods": null,
+              "neutral_site": false,
+              "conference_game": true,
+              "venue": "Target Center",
+              "city": "Minneapolis",
+              "attendance": null,
+              "books": [],
+              "result": null
+            },
+            {
+              "game_id": "401909979",
+              "season": 2027,
+              "season_type": "regular",
+              "date": "2026-11-12",
+              "starts_at": "2026-11-13T02:00:00.000Z",
+              "status": "scheduled",
+              "home": {
+                "team_id": "21",
+                "abbrev": "PHX",
+                "name": "Phoenix Suns",
+                "score": null
+              },
+              "away": {
+                "team_id": "30",
+                "abbrev": "CHA",
+                "name": "Charlotte Hornets",
+                "score": null
+              },
+              "periods": null,
+              "overtime_periods": null,
+              "neutral_site": false,
+              "conference_game": false,
+              "venue": "Mortgage Matchup Center",
+              "city": "Phoenix",
+              "attendance": null,
+              "books": [],
+              "result": null
+            }
+          ],
+          "count": 0,
+          "note": "No sportsbook lines for this day. Sportsbook lines: 4 to 12 books per regular-season game from 2013-14 to 2023-24 (10 to 12 from 2020-21), and from the July 2020 restart opening and closing lines (a median of 7 books per game in 2020-21 to 2022-23, 8 since 2023-24), none before 2012-13."
+        }
+      }
+    }
+  ],
+  "odds_association": {
+    "matched_game_ids": [],
+    "games_without_matched_odds": [
+      "17111",
+      "17112",
+      "17113",
+      "17114"
+    ],
+    "all_games_have_odds": false
+  }
+}
