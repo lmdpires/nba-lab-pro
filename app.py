@@ -1864,6 +1864,17 @@ def _daily_collect_results(pregame_payload, current_games=None):
     if not API_KEY:
         raise RuntimeError("API_SPORTS_NBA_KEY não configurada.")
     games_saved = pregame_payload.get("games", [])
+    # Model predictions are stored separately from the captured fixture metadata.
+    # Merge them by game_id before calculating model outcomes.
+    predictions_by_id = {
+        str(row.get("game_id")): row
+        for row in pregame_payload.get("predictions", [])
+        if str(row.get("game_id") or "").strip()
+    }
+    games_saved = [
+        {**game, **predictions_by_id.get(str(game.get("game_id")), {})}
+        for game in games_saved
+    ]
     et_dates = sorted({str(g["game_date_et"]) for g in games_saved})
     found = {}
     api_calls = []
@@ -1929,16 +1940,26 @@ def _daily_collect_results(pregame_payload, current_games=None):
             home_won = int(current["home_score"]) > int(current["away_score"])
             result["actual_home_win"] = int(home_won)
             result["actual_over_220_5"] = int(result["actual_total"] > DAILY_REFERENCE_TOTAL_LINE)
-            result["m1_moneyline_correct"] = (
-                (saved["m1_pick"] == "Casa" and home_won)
-                or (saved["m1_pick"] == "Fora" and not home_won)
-            )
-            result["m2_over_under_correct"] = (
-                (saved["m2_p_over"] >= 0.5 and result["actual_total"] > DAILY_REFERENCE_TOTAL_LINE)
-                or (saved["m2_p_over"] < 0.5 and result["actual_total"] < DAILY_REFERENCE_TOTAL_LINE)
-            ) if result["actual_total"] != DAILY_REFERENCE_TOTAL_LINE else None
-            result["m1_brier"] = (float(saved["m1_p_home"]) - float(home_won)) ** 2
-            result["m2_over_brier"] = (float(saved["m2_p_over"]) - float(result["actual_over_220_5"])) ** 2
+            m1_pick = saved.get("m1_pick")
+            if not m1_pick and saved.get("m1_p_home") is not None and saved.get("m1_p_away") is not None:
+                m1_pick = "Casa" if float(saved["m1_p_home"]) >= float(saved["m1_p_away"]) else "Fora"
+            if m1_pick in {"Casa", "Fora"}:
+                result["m1_moneyline_correct"] = (
+                    (m1_pick == "Casa" and home_won)
+                    or (m1_pick == "Fora" and not home_won)
+                )
+            m2_line = float(saved.get("m2_reference_line", DAILY_REFERENCE_TOTAL_LINE))
+            m2_p_over = saved.get("m2_p_over")
+            if m2_p_over is not None:
+                result["m2_over_under_correct"] = (
+                    (float(m2_p_over) >= 0.5 and result["actual_total"] > m2_line)
+                    or (float(m2_p_over) < 0.5 and result["actual_total"] < m2_line)
+                ) if result["actual_total"] != m2_line else None
+                result["m2_over_brier"] = (
+                    float(m2_p_over) - float(result["actual_total"] > m2_line)
+                ) ** 2
+            if saved.get("m1_p_home") is not None:
+                result["m1_brier"] = (float(saved["m1_p_home"]) - float(home_won)) ** 2
         results.append(result)
 
     return {
