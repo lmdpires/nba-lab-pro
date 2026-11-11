@@ -1979,12 +1979,21 @@ def _daily_zip_bytes(pregame_payload, odds_rows, results_payload=None):
             "phase": "completed" if results_payload else "pregame",
             "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "sources": ["M1 v1.1", "M2 HGB v1", "DunkAPI get_odds", "API-Sports NBA"],
-            "dunkapi_estimated_credits": pregame_payload.get("dunkapi_estimated_credits", 0),
+            "dunkapi_estimated_credits": (
+                pregame_payload.get("dunkapi_estimated_credits", 0)
+                + sum(int(a.get("estimated_credits", 0) or 0)
+                      for a in pregame_payload.get("odds_retry_attempts", []))
+            ),
+            "dunkapi_initial_estimated_credits": pregame_payload.get("dunkapi_estimated_credits", 0),
+            "dunkapi_retry_attempts": len(pregame_payload.get("odds_retry_attempts", [])),
             "results_included": bool(results_payload),
         }))
         archive.writestr("daily_predictions.csv", pd.DataFrame(pregame_payload.get("predictions", [])).to_csv(index=False).encode("utf-8-sig"))
         archive.writestr("dunkapi_odds_rows.csv", pd.DataFrame(odds_rows or []).to_csv(index=False).encode("utf-8-sig"))
         archive.writestr("dunkapi_raw_responses.json", _daily_json_bytes(pregame_payload.get("dunkapi_responses", [])))
+        archive.writestr("dunkapi_odds_retry_attempts.json", _daily_json_bytes(
+            pregame_payload.get("odds_retry_attempts", [])
+        ))
         archive.writestr("games_at_capture.json", _daily_json_bytes(pregame_payload.get("games", [])))
         archive.writestr("model_versions.json", _daily_json_bytes({
             "moneyline": "M1 v1.1",
@@ -2081,6 +2090,131 @@ def _daily_acquire_capture_lock(day_key):
     }
     _, created = _daily_create_json(lock_name, lock_payload)
     return bool(created)
+
+
+def _daily_list_odds_retry_files(day_key):
+    """List immutable supplemental odds-attempt files for one report date."""
+    prefix = f"{day_key}_odds_retry_"
+    if github_configured():
+        repo = st.secrets.get("GITHUB_REPOSITORY", "lmdpires/nba-lab-pro")
+        branch = st.secrets.get("GITHUB_BRANCH", "main")
+        response = requests.get(
+            f"{GITHUB_API}/repos/{repo}/contents/{DAILY_REPORT_DIR}",
+            headers=github_read_headers(), params={"ref": branch}, timeout=20,
+        )
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        names = [item.get("name", "") for item in response.json()
+                 if item.get("type") == "file"]
+    else:
+        folder = Path(__file__).with_name(DAILY_REPORT_DIR)
+        names = [item.name for item in folder.glob(f"{prefix}*.json")] if folder.exists() else []
+    return sorted(name for name in names
+                  if name.startswith(prefix) and name.endswith(".json"))
+
+
+def _daily_load_odds_retry_attempts(day_key):
+    attempts = []
+    for filename in _daily_list_odds_retry_files(day_key):
+        payload = _daily_read_json(filename)
+        if isinstance(payload, dict):
+            attempts.append(payload)
+    return attempts
+
+
+def _daily_odds_bundle(pregame_payload):
+    """Combine original and supplemental odds without modifying the frozen snapshot."""
+    day_key = str(pregame_payload.get("report_date", ""))
+    attempts = _daily_load_odds_retry_attempts(day_key) if day_key else []
+    all_responses = list(pregame_payload.get("dunkapi_responses", []) or [])
+    for attempt in attempts:
+        all_responses.extend(attempt.get("dunkapi_responses", []) or [])
+
+    lookup = {
+        str(game["game_id"]): {
+            "home_team": game["home_team"],
+            "away_team": game["away_team"],
+            "starts_at": game["starts_at_utc"],
+        }
+        for game in pregame_payload.get("games", [])
+    }
+    odds_rows = _daily_flatten_odds(all_responses, lookup)
+    matched_ids = {
+        str(row.get("game_id")) for row in odds_rows
+        if str(row.get("game_id") or "").strip()
+    }
+    missing_ids = [gid for gid in lookup if gid not in matched_ids]
+    return {
+        "attempts": attempts,
+        "responses": all_responses,
+        "odds_rows": odds_rows,
+        "matched_game_ids": sorted(matched_ids),
+        "missing_game_ids": missing_ids,
+        "all_games_have_odds": bool(lookup) and not missing_ids,
+    }
+
+
+def _daily_retry_odds(day_key, pregame_payload):
+    """Explicit, lock-protected DunkAPI retry; every attempt is immutable and auditable."""
+    bundle = _daily_odds_bundle(pregame_payload)
+    if bundle["all_games_have_odds"]:
+        return bundle, False
+
+    lock_key = f"{day_key}_odds_retry"
+    if not _daily_acquire_capture_lock(lock_key):
+        raise RuntimeError(
+            "Já existe uma tentativa de obter odds em curso para esta data. "
+            "Aguarda alguns instantes antes de voltar a tentar."
+        )
+
+    try:
+        missing_ids = set(bundle["missing_game_ids"])
+        et_dates = sorted({
+            str(game.get("game_date_et"))
+            for game in pregame_payload.get("games", [])
+            if str(game.get("game_id")) in missing_ids and game.get("game_date_et")
+        })
+        if not et_dates:
+            raise RuntimeError("A captura guardada não contém datas ET para consultar o DunkAPI.")
+
+        responses = _daily_fetch_dunk_odds(et_dates)
+        lookup = {
+            str(game["game_id"]): {
+                "home_team": game["home_team"],
+                "away_team": game["away_team"],
+                "starts_at": game["starts_at_utc"],
+            }
+            for game in pregame_payload.get("games", [])
+        }
+        new_rows = _daily_flatten_odds(responses, lookup)
+        matched_ids = sorted({
+            str(row.get("game_id")) for row in new_rows
+            if str(row.get("game_id") or "").strip()
+        })
+        missing_ids = [gid for gid in lookup if gid not in set(matched_ids)]
+        attempt_at = datetime.datetime.now(datetime.timezone.utc)
+        attempt_payload = {
+            "report_date": day_key,
+            "attempted_at_utc": attempt_at.isoformat(),
+            "query_dates_et": et_dates,
+            "estimated_credits": 10 * len(et_dates),
+            "dunkapi_responses": responses,
+            "odds_association": {
+                "matched_game_ids": matched_ids,
+                "games_without_matched_odds": missing_ids,
+                "all_games_have_odds": bool(lookup) and not missing_ids,
+            },
+        }
+        filename = f"{day_key}_odds_retry_{attempt_at.strftime('%Y%m%dT%H%M%S%fZ')}.json"
+        saved, created = _daily_create_json(filename, attempt_payload)
+        if not created:
+            raise RuntimeError("A tentativa de odds já existia e não foi substituída.")
+
+        updated_bundle = _daily_odds_bundle(pregame_payload)
+        return updated_bundle, True
+    finally:
+        _daily_remove_json(f"{lock_key}_capture.lock.json")
 
 
 def _daily_capture_pregame(selected_day, current_games):
@@ -2196,18 +2330,11 @@ def _daily_capture_pregame(selected_day, current_games):
 
 
 def _daily_pregame_zip(pregame_payload):
-    lookup = {
-        str(g["game_id"]): {
-            "home_team": g["home_team"],
-            "away_team": g["away_team"],
-            "starts_at": g["starts_at_utc"],
-        }
-        for g in pregame_payload.get("games", [])
-    }
-    odds_rows = _daily_flatten_odds(
-        pregame_payload.get("dunkapi_responses", []), lookup
-    )
-    return _daily_zip_bytes(pregame_payload, odds_rows)
+    bundle = _daily_odds_bundle(pregame_payload)
+    zip_payload = dict(pregame_payload)
+    zip_payload["odds_retry_attempts"] = bundle["attempts"]
+    zip_payload["dunkapi_responses"] = bundle["responses"]
+    return _daily_zip_bytes(zip_payload, bundle["odds_rows"])
 
 
 def _daily_auto_capture_status(day, day_games, enabled=True):
@@ -2335,14 +2462,11 @@ def _daily_report_action(selected_day, current_games):
             f"{target_day}_results.json", results_payload
         )
         predictions = pregame.get("predictions", [])
-        odds_rows = _daily_flatten_odds(
-            pregame.get("dunkapi_responses", []),
-            {str(g["game_id"]): {
-                "home_team": g["home_team"], "away_team": g["away_team"],
-                "starts_at": g["starts_at_utc"],
-            } for g in pregame.get("games", [])}
-        )
-        zip_bytes = _daily_zip_bytes(pregame, odds_rows, saved_results)
+        odds_bundle = _daily_odds_bundle(pregame)
+        zip_payload = dict(pregame)
+        zip_payload["odds_retry_attempts"] = odds_bundle["attempts"]
+        zip_payload["dunkapi_responses"] = odds_bundle["responses"]
+        zip_bytes = _daily_zip_bytes(zip_payload, odds_bundle["odds_rows"], saved_results)
         return (
             f"NBA_LAB_PRO_{target_day}_COMPLETO.zip",
             zip_bytes,
@@ -2434,10 +2558,11 @@ def _daily_report_action(selected_day, current_games):
 
 def _render_daily_report_button(day, day_games, auto_capture_enabled=True):
     status = _daily_auto_capture_status(day, day_games, enabled=auto_capture_enabled)
+    day_key = day.isoformat()
 
     st.caption("A captura pré-jogo é automática na primeira entrada em cada data.")
     if status == "waiting":
-        st.success("⏳ AGUARDAR RESULTADOS · Captura pré-jogo guardada")
+        st.success("⏳ PREVISÕES PRÉ-JOGO GUARDADAS · A aguardar resultados")
     elif status == "complete":
         st.success("✅ RELATÓRIO COMPLETO · Resultados atualizados")
     elif status == "capturing":
@@ -2456,7 +2581,7 @@ def _render_daily_report_button(day, day_games, auto_capture_enabled=True):
         )
         if st.button(
             "↻ Tentar captura novamente",
-            key=f"retry_daily_capture_{day.isoformat()}",
+            key=f"retry_daily_capture_{day_key}",
             use_container_width=True,
         ):
             st.session_state.pop("nba_daily_auto_attempted_date", None)
@@ -2464,14 +2589,71 @@ def _render_daily_report_button(day, day_games, auto_capture_enabled=True):
             st.session_state.pop("nba_daily_auto_error", None)
             st.rerun()
 
-    pregame_exists = _daily_read_json(f"{day.isoformat()}_pregame.json") is not None
-    results_exist = _daily_read_json(f"{day.isoformat()}_results.json") is not None
+    pregame = _daily_read_json(f"{day_key}_pregame.json")
+    pregame_exists = pregame is not None
+    results_payload = _daily_read_json(f"{day_key}_results.json")
+    results_exist = results_payload is not None
+    odds_bundle = _daily_odds_bundle(pregame) if pregame_exists else None
 
-    # Manual action is now only for result reconciliation; it never starts a new pre-game capture.
+    if pregame_exists:
+        if odds_bundle["all_games_have_odds"]:
+            st.success(
+                f"ODDS DISPONÍVEIS · {len(odds_bundle['odds_rows'])} registos associados "
+                f"a {len(odds_bundle['matched_game_ids'])}/{len(pregame.get('games', []))} jogos"
+            )
+        else:
+            missing_count = len(odds_bundle["missing_game_ids"])
+            attempt_count = len(odds_bundle["attempts"])
+            st.warning(
+                "ODDS INDISPONÍVEIS OU INCOMPLETAS · "
+                f"{missing_count} jogo(s) sem odds associadas. "
+                "As previsões M1/M2 estão guardadas; não foram alteradas. "
+                f"Tentativas adicionais: {attempt_count}. Uma nova consulta ao DunkAPI "
+                "poderá consumir créditos."
+            )
+            if st.button(
+                "↻ Tentar obter odds novamente",
+                key=f"retry_daily_odds_{day_key}",
+                use_container_width=True,
+            ):
+                try:
+                    with st.spinner("A consultar novamente as odds no DunkAPI…"):
+                        odds_bundle, created_attempt = _daily_retry_odds(day_key, pregame)
+                    if odds_bundle["all_games_have_odds"]:
+                        st.success(
+                            f"Odds recuperadas: {len(odds_bundle['odds_rows'])} registos "
+                            f"associados a todos os {len(pregame.get('games', []))} jogos."
+                        )
+                    else:
+                        st.warning(
+                            "O DunkAPI voltou a responder sem odds suficientes. "
+                            "As previsões originais continuam preservadas."
+                        )
+                    # Rebuild the download from the immutable snapshot plus supplemental attempts.
+                    current_name = (
+                        f"NBA_LAB_PRO_{day_key}_COMPLETO.zip" if results_exist
+                        else f"NBA_LAB_PRO_{day_key}_PREJOGO.zip"
+                    )
+                    zip_payload = dict(pregame)
+                    zip_payload["odds_retry_attempts"] = odds_bundle["attempts"]
+                    zip_payload["dunkapi_responses"] = odds_bundle["responses"]
+                    zip_content = _daily_zip_bytes(
+                        zip_payload, odds_bundle["odds_rows"], results_payload
+                    )
+                    st.session_state["nba_daily_report_download"] = {
+                        "filename": current_name,
+                        "content": zip_content,
+                        "message": "ZIP atualizado com as tentativas adicionais de odds.",
+                    }
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Não foi possível obter odds: {exc}")
+
+    # Manual action is only for result reconciliation; it never starts a new pre-game capture.
     if pregame_exists and not results_exist:
         if st.button(
             "🔄 Atualizar resultados",
-            key=f"update_daily_results_{day.isoformat()}",
+            key=f"update_daily_results_{day_key}",
             use_container_width=True,
             type="primary",
         ):
@@ -2479,58 +2661,36 @@ def _render_daily_report_button(day, day_games, auto_capture_enabled=True):
                 with st.spinner("A consultar os resultados dos jogos…"):
                     filename, content, message = _daily_report_action(day, day_games)
                 st.session_state["nba_daily_report_download"] = {
-                    "filename": filename,
-                    "content": content,
-                    "message": message,
+                    "filename": filename, "content": content, "message": message,
                 }
                 st.success(message)
                 st.session_state["nba_daily_auto_status"] = "complete"
             except Exception as exc:
                 st.warning(str(exc))
 
-    # A pre-game ZIP is made available automatically, including after a new session starts.
+    # Reconstruct the pre-game ZIP from the immutable snapshot and separate retry records.
     download = st.session_state.get("nba_daily_report_download")
-    if pregame_exists and (not download or download.get("filename") != f"NBA_LAB_PRO_{day.isoformat()}_PREJOGO.zip"):
-        pregame = _daily_read_json(f"{day.isoformat()}_pregame.json")
-        if pregame:
-            st.session_state["nba_daily_report_download"] = {
-                "filename": f"NBA_LAB_PRO_{day.isoformat()}_PREJOGO.zip",
-                "content": _daily_pregame_zip(pregame),
-                "message": "ZIP pré-jogo reconstruído a partir da captura guardada.",
-            }
-            download = st.session_state["nba_daily_report_download"]
-
-    # Completed ZIP is reconstructed from the immutable pre-game + results files when needed.
-    if results_exist:
-        pregame = _daily_read_json(f"{day.isoformat()}_pregame.json")
-        results_payload = _daily_read_json(f"{day.isoformat()}_results.json")
-        if pregame and results_payload:
-            odds_lookup = {
-                str(g["game_id"]): {
-                    "home_team": g["home_team"],
-                    "away_team": g["away_team"],
-                    "starts_at": g["starts_at_utc"],
-                }
-                for g in pregame.get("games", [])
-            }
-            odds_rows = _daily_flatten_odds(pregame.get("dunkapi_responses", []), odds_lookup)
-            st.session_state["nba_daily_report_download"] = {
-                "filename": f"NBA_LAB_PRO_{day.isoformat()}_COMPLETO.zip",
-                "content": _daily_zip_bytes(pregame, odds_rows, results_payload),
-                "message": "Relatório completo reconstruído a partir dos registos guardados.",
-            }
-            download = st.session_state["nba_daily_report_download"]
+    expected_pregame = f"NBA_LAB_PRO_{day_key}_PREJOGO.zip"
+    expected_complete = f"NBA_LAB_PRO_{day_key}_COMPLETO.zip"
+    expected_current = expected_complete if results_exist else expected_pregame
+    if pregame_exists and (not download or download.get("filename") != expected_current):
+        zip_payload = dict(pregame)
+        zip_payload["odds_retry_attempts"] = odds_bundle["attempts"]
+        zip_payload["dunkapi_responses"] = odds_bundle["responses"]
+        filename = expected_complete if results_exist else expected_pregame
+        content = _daily_zip_bytes(zip_payload, odds_bundle["odds_rows"], results_payload)
+        st.session_state["nba_daily_report_download"] = {
+            "filename": filename, "content": content,
+            "message": "ZIP reconstruído a partir da captura original e dos registos suplementares.",
+        }
+        download = st.session_state["nba_daily_report_download"]
 
     download = st.session_state.get("nba_daily_report_download")
-    if download and (
-        download.get("filename", "").startswith(f"NBA_LAB_PRO_{day.isoformat()}_")
-    ):
+    if download and download.get("filename", "").startswith(f"NBA_LAB_PRO_{day_key}_"):
         st.download_button(
             "⬇️ Descarregar ZIP " + ("COMPLETO" if "COMPLETO" in download["filename"] else "PRÉ-JOGO"),
-            data=download["content"],
-            file_name=download["filename"],
-            mime="application/zip",
-            key=f"download_{download['filename']}",
+            data=download["content"], file_name=download["filename"],
+            mime="application/zip", key=f"download_{download['filename']}",
             use_container_width=True,
         )
 
