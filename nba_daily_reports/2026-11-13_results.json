@@ -1,0 +1,72 @@
+{
+  "updated_at_utc": "2026-11-13T12:35:33.340264+00:00",
+  "api_sports_queries": [],
+  "results": [
+    {
+      "game_id": "17111",
+      "home_team": "Philadelphia 76ers",
+      "away_team": "Toronto Raptors",
+      "status": "FT",
+      "home_score": 123,
+      "away_score": 112,
+      "actual_total": 235,
+      "result_updated_at_utc": "2026-11-13T12:35:33.340193+00:00",
+      "actual_home_win": 1,
+      "actual_over_220_5": 1,
+      "m1_moneyline_correct": true,
+      "m2_over_under_correct": true,
+      "m2_over_brier": 0.08274673706180721,
+      "m1_brier": 0.22794627353615854
+    },
+    {
+      "game_id": "17112",
+      "home_team": "Washington Wizards",
+      "away_team": "Detroit Pistons",
+      "status": "FT",
+      "home_score": 140,
+      "away_score": 144,
+      "actual_total": 284,
+      "result_updated_at_utc": "2026-11-13T12:35:33.340221+00:00",
+      "actual_home_win": 0,
+      "actual_over_220_5": 1,
+      "m1_moneyline_correct": true,
+      "m2_over_under_correct": true,
+      "m2_over_brier": 0.12668467590300544,
+      "m1_brier": 0.019662876684145663
+    },
+    {
+      "game_id": "17113",
+      "home_team": "Minnesota Timberwolves",
+      "away_team": "Dallas Mavericks",
+      "status": "FT",
+      "home_score": 133,
+      "away_score": 94,
+      "actual_total": 227,
+      "result_updated_at_utc": "2026-11-13T12:35:33.340232+00:00",
+      "actual_home_win": 1,
+      "actual_over_220_5": 1,
+      "m1_moneyline_correct": true,
+      "m2_over_under_correct": true,
+      "m2_over_brier": 0.03859205200160604,
+      "m1_brier": 0.049750268710376064
+    },
+    {
+      "game_id": "17114",
+      "home_team": "Phoenix Suns",
+      "away_team": "Charlotte Hornets",
+      "status": "FT",
+      "home_score": 101,
+      "away_score": 96,
+      "actual_total": 197,
+      "result_updated_at_utc": "2026-11-13T12:35:33.340239+00:00",
+      "actual_home_win": 1,
+      "actual_over_220_5": 0,
+      "m1_moneyline_correct": true,
+      "m2_over_under_correct": false,
+      "m2_over_brier": 0.27216759654834843,
+      "m1_brier": 0.16389169260394873
+    }
+  ],
+  "unresolved_game_ids": [],
+  "all_games_resolved": true
+}
